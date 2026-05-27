@@ -1482,6 +1482,8 @@
     "gateway:dev:reset": "node scripts/run-with-env.mjs OPENCLAW_SKIP_CHANNELS=1 -- node scripts/run-node.mjs --dev gateway --reset",
     "gateway:watch": "node scripts/gateway-watch-tmux.mjs gateway --force",
     "gateway:watch:raw": "node scripts/watch-node.mjs gateway --force",
+    "electron:dev": "cd apps/electron && npm install --ignore-scripts 2>/dev/null && npm run dev",
+    "electron:build": "cd apps/electron && npm install --ignore-scripts 2>/dev/null && npm run build",
     "gen:host-env-policy:swift": "node scripts/generate-host-env-security-policy-swift.mjs --write",
     "ghsa:patch": "node scripts/ghsa-patch.mjs",
     "ios:beta": "bash scripts/ios-beta-release.sh",
