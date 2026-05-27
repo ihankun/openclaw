@@ -33,8 +33,8 @@ function log(...args) {
 // ============================================================================
 const GATEWAY_PORT = 18789;
 const GATEWAY_HOST = "127.0.0.1";
-const DEFAULT_WINDOW_WIDTH = 1200;
-const DEFAULT_WINDOW_HEIGHT = 800;
+const DEFAULT_WINDOW_WIDTH = 1400;
+const DEFAULT_WINDOW_HEIGHT = 900;
 const MIN_WINDOW_WIDTH = 800;
 const MIN_WINDOW_HEIGHT = 600;
 const GATEWAY_STARTUP_TIMEOUT_MS = 30_000;
@@ -306,7 +306,6 @@ function createMainWindow() {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
-    if (isDevelopment) mainWindow.webContents.openDevTools();
   });
 
   // Auto-open DevTools on navigation failure (useful for packaged debugging)

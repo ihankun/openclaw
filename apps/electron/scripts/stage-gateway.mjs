@@ -16,6 +16,14 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..", "..");
 const STAGING_DIR = path.resolve(__dirname, "..", "build-staging", "gateway");
+const ELECTRON_PKG = path.resolve(__dirname, "..", "package.json");
+
+// Sync version from root package.json to electron package.json
+const rootPkg = JSON.parse(readFileSync(path.join(PROJECT_ROOT, "package.json"), "utf-8"));
+const electronPkg = JSON.parse(readFileSync(ELECTRON_PKG, "utf-8"));
+electronPkg.version = rootPkg.version;
+writeFileSync(ELECTRON_PKG, JSON.stringify(electronPkg, null, 2) + "\n");
+console.log(`[stage] Synced version: ${rootPkg.version}\n`);
 
 console.log("[stage] Staging OpenClaw gateway runtime...\n");
 
