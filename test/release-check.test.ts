@@ -174,12 +174,7 @@ describe("resolveReleaseNpmCommand", () => {
       }),
     ).toEqual({
       command: "C:\\Windows\\System32\\cmd.exe",
-      args: [
-        "/d",
-        "/s",
-        "/c",
-        '""C:\\Program Files\\nodejs\\npm.cmd" pack --dry-run --json"',
-      ],
+      args: ["/d", "/s", "/c", '""C:\\Program Files\\nodejs\\npm.cmd" pack --dry-run --json"'],
       shell: false,
       windowsVerbatimArguments: true,
     });
@@ -570,6 +565,7 @@ describe("collectMissingPackPaths", () => {
       "scripts/lib/official-external-provider-catalog.json",
       "scripts/lib/package-dist-imports.mjs",
       "scripts/postinstall-bundled-plugins.mjs",
+      "dist/agents/model-provider-auth.worker.js",
       "dist/task-registry-control.runtime.js",
       "dist/telegram-ingress-worker.runtime.js",
       bundledDistPluginFile("telegram", "runtime-api.js"),
@@ -602,6 +598,7 @@ describe("collectMissingPackPaths", () => {
         "scripts/lib/package-dist-imports.mjs",
         "scripts/postinstall-bundled-plugins.mjs",
         "dist/plugin-sdk/root-alias.cjs",
+        "dist/agents/model-provider-auth.worker.js",
         "dist/task-registry-control.runtime.js",
         "dist/telegram-ingress-worker.runtime.js",
         "dist/build-info.json",
@@ -633,6 +630,34 @@ describe("collectMissingPackPaths", () => {
         "installed package is missing required plugin SDK artifact: dist/plugin-sdk/zod.js",
         "installed package root dist file 'typescript-compiler.js' is invalid or exceeds 6291456 bytes.",
       ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects packed plugin SDK root aliases that depend on minified export letters", () => {
+    const root = mkdtempSync(join(tmpdir(), "release-check-packed-root-alias-"));
+    try {
+      const packageRoot = join(root, "openclaw");
+      const pluginSdkDir = join(packageRoot, "dist", "plugin-sdk");
+      mkdirSync(pluginSdkDir, { recursive: true });
+      writeFileSync(
+        join(packageRoot, "package.json"),
+        `${JSON.stringify({ name: "openclaw", version: "2026.5.14-beta.3", dependencies: {} })}\n`,
+      );
+      writeFileSync(
+        join(pluginSdkDir, "root-alias.cjs"),
+        "module.exports = { onDiagnosticEvent: mod.r };\n",
+      );
+
+      expect(
+        collectPackedInstalledPackageVerificationErrors({
+          expectedVersion: "2026.5.14-beta.3",
+          packageRoot,
+        }),
+      ).toContain(
+        "installed package dist/plugin-sdk/root-alias.cjs depends on a single-letter bundled export alias.",
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -702,22 +727,22 @@ describe("collectPackUnpackedSizeErrors", () => {
 });
 
 describe("collectCriticalPluginSdkEntrypointSizeErrors", () => {
-  it("flags oversized plugin SDK test-contract entrypoints before publish", () => {
+  it("flags oversized public plugin SDK entrypoints before publish", () => {
     const root = mkdtempSync(join(tmpdir(), "release-check-critical-sdk-"));
     try {
       const pluginSdkDir = join(root, "dist", "plugin-sdk");
       mkdirSync(pluginSdkDir, { recursive: true });
-      writeFileSync(join(pluginSdkDir, "agent-runtime-test-contracts.js"), "export {};\n");
-      writeFileSync(join(pluginSdkDir, "provider-test-contracts.js"), "export {};\n");
+      writeFileSync(join(pluginSdkDir, "core.js"), "export {};\n");
+      writeFileSync(join(pluginSdkDir, "runtime.js"), "export {};\n");
       writeFileSync(
-        join(pluginSdkDir, "plugin-test-contracts.js"),
+        join(pluginSdkDir, "provider-entry.js"),
         "x".repeat(MAX_CRITICAL_PLUGIN_SDK_ENTRYPOINT_BYTES + 1),
       );
 
       expect(collectCriticalPluginSdkEntrypointSizeErrors(root)).toEqual([
-        `dist/plugin-sdk/plugin-test-contracts.js is ${
+        `dist/plugin-sdk/provider-entry.js is ${
           MAX_CRITICAL_PLUGIN_SDK_ENTRYPOINT_BYTES + 1
-        } bytes, exceeding ${MAX_CRITICAL_PLUGIN_SDK_ENTRYPOINT_BYTES} bytes. Keep public SDK test-contract entrypoints lazy and avoid bundling compiler/runtime internals.`,
+        } bytes, exceeding ${MAX_CRITICAL_PLUGIN_SDK_ENTRYPOINT_BYTES} bytes. Keep public SDK package entrypoints lazy and avoid bundling compiler/runtime internals.`,
       ]);
     } finally {
       rmSync(root, { recursive: true, force: true });

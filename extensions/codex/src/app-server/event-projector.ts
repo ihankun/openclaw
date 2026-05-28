@@ -1,4 +1,3 @@
-import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
 import {
   classifyAgentHarnessTerminalOutcome,
   embeddedAgentLog,
@@ -21,6 +20,7 @@ import {
   type ToolProgressDetailMode,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { emitTrustedDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
+import type { AssistantMessage, Usage } from "openclaw/plugin-sdk/llm";
 import { resolveCodexLocalRuntimeAttribution } from "./local-runtime-attribution.js";
 import {
   readCodexNotificationThreadId,
@@ -384,14 +384,14 @@ export class CodexAppServerEventProjector {
     sideEffectEvidence?: boolean;
     contentItems: CodexDynamicToolCallOutputContentItem[];
   }): void {
-    const existingMeta = this.toolMetas.get(params.callId);
-    this.toolMetas.set(params.callId, {
-      toolName: params.tool,
-      ...(existingMeta?.meta ? { meta: existingMeta.meta } : {}),
-      ...(existingMeta?.asyncStarted === true || params.asyncStarted === true
-        ? { asyncStarted: true }
-        : {}),
-    });
+    if (params.asyncStarted === true) {
+      const existing = this.toolMetas.get(params.callId);
+      this.toolMetas.set(params.callId, {
+        toolName: existing?.toolName ?? params.tool,
+        ...(existing?.meta ? { meta: existing.meta } : {}),
+        asyncStarted: true,
+      });
+    }
     this.recordToolTranscriptResult({
       id: params.callId,
       name: params.tool,
@@ -1222,11 +1222,11 @@ export class CodexAppServerEventProjector {
       return;
     }
     const meta = itemMeta(item, this.toolProgressDetailMode());
-    const existingMeta = this.toolMetas.get(item.id);
+    const existing = this.toolMetas.get(item.id);
     this.toolMetas.set(item.id, {
       toolName,
       ...(meta ? { meta } : {}),
-      ...(existingMeta?.asyncStarted === true ? { asyncStarted: true } : {}),
+      ...(existing?.asyncStarted ? { asyncStarted: true } : {}),
     });
     if (isSideEffectingNativeToolItem(item)) {
       this.sideEffectingToolItemIds.add(item.id);

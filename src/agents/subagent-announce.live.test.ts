@@ -83,7 +83,7 @@ function liveSubagentConfig(
   if (providerConfig.provider === "google") {
     providers.google = {
       api: "google-generative-ai" as const,
-      agentRuntime: { id: "pi" },
+      agentRuntime: { id: "openclaw" },
       baseUrl: "https://generativelanguage.googleapis.com/v1beta",
       apiKey: {
         source: "env" as const,
@@ -96,7 +96,7 @@ function liveSubagentConfig(
           id: modelId,
           name: modelId,
           api: "google-generative-ai" as const,
-          agentRuntime: { id: "pi" },
+          agentRuntime: { id: "openclaw" },
           input: ["text" as const],
           reasoning: true,
           contextWindow: 1_048_576,
@@ -108,7 +108,7 @@ function liveSubagentConfig(
   } else {
     providers.openai = {
       api: "openai-responses" as const,
-      agentRuntime: { id: "pi" },
+      agentRuntime: { id: "openclaw" },
       apiKey: {
         source: "env" as const,
         provider: "default" as const,
@@ -121,7 +121,7 @@ function liveSubagentConfig(
           id: modelId,
           name: modelId,
           api: "openai-responses" as const,
-          agentRuntime: { id: "pi" },
+          agentRuntime: { id: "openclaw" },
           input: ["text" as const],
           reasoning: true,
           contextWindow: 1_047_576,
@@ -148,7 +148,7 @@ function liveSubagentConfig(
       defaults: {
         workspace,
         model: { primary: modelKey },
-        models: { [modelKey]: { agentRuntime: { id: "pi" }, params: { maxTokens: 1024 } } },
+        models: { [modelKey]: { agentRuntime: { id: "openclaw" }, params: { maxTokens: 1024 } } },
         sandbox: { mode: "off" },
         subagents: {
           allowAgents: ["*"],
@@ -371,10 +371,16 @@ describeLive("subagent announce live", () => {
       const nonce = randomBytes(3).toString("hex").toUpperCase();
       const childToken = `CHILD_STEERED_${nonce}`;
       const parentToken = `PARENT_SAW_${childToken}`;
+      const parentStartedToken = `PARENT_READY_${nonce}`;
       const steerToken = `STEER_${nonce}`;
+      const steerMessage = [
+        `${steerToken} has arrived.`,
+        "Stop waiting and do not call any tools.",
+        `Reply exactly ${childToken} and nothing else.`,
+      ].join(" ");
       const childTask = [
         `Immediately call sessions_yield with message="waiting for ${steerToken}".`,
-        `After a steering message containing ${steerToken} arrives, reply exactly ${childToken}.`,
+        `After a steering message says ${steerToken} has arrived, stop waiting and reply exactly ${childToken}.`,
         `Do not reply with ${childToken} before receiving ${steerToken}.`,
       ].join(" ");
       const sessionKey = `agent:main:live-subagent-${nonce.toLowerCase()}`;
@@ -464,9 +470,9 @@ describeLive("subagent announce live", () => {
               runTimeoutSeconds: 300,
             })}.`,
             'Step 2: after spawn returns status="accepted", do not call the subagents tool; the test harness will steer the child.',
-            `Step 3: call sessions_yield with message="waiting for ${childToken}" and wait for the child completion event.`,
-            `Step 4: after the completion event arrives, reply exactly ${parentToken}.`,
-            "Do not reply with the parent token until the child completion event is visible.",
+            `Step 3: reply exactly ${parentStartedToken}.`,
+            `In a future continuation after the child completion event arrives, reply exactly ${parentToken}.`,
+            `Do not reply with ${parentToken} before the child completion event is visible.`,
           ].join("\n"),
         },
         { expectFinal: true, timeoutMs: REQUEST_TIMEOUT_MS },
@@ -483,14 +489,17 @@ describeLive("subagent announce live", () => {
           (run) => run.taskName === "steered_child" && !run.endedAt,
         );
       });
+      const initialResponse = await initialRequest;
+      expect(extractPayloadText(initialResponse.result)).toContain(parentStartedToken);
+
       const cfg = getRuntimeConfig();
       const steerResult = await steerControlledSubagentRun({
         cfg,
         controller: resolveSubagentController({ cfg, agentSessionKey: sessionKey }),
         entry: spawnedRun,
-        message: steerToken,
+        message: steerMessage,
       });
-      expect(steerResult.status).toBe("accepted");
+      expect(["accepted", "done"]).toContain(steerResult.status);
 
       const steeredRun = await waitFor("steered child completion", () => {
         if (initialError) {
@@ -515,12 +524,16 @@ describeLive("subagent announce live", () => {
           : undefined;
       });
 
-      const completedDispatch = inProcessAgentDispatches.find(
-        (entry) => entry.phase === "completed",
+      const completedDispatch = await waitFor(
+        "in-process subagent completion agent dispatch",
+        () => {
+          if (initialError) {
+            throw initialError;
+          }
+          return inProcessAgentDispatches.find((entry) => entry.phase === "completed");
+        },
       );
-      if (completedDispatch) {
-        expect(completedDispatch.resultText).toContain(childToken);
-      }
+      expect(completedDispatch.resultText).toContain(parentToken);
       expect(
         inProcessAgentDispatches.some((entry) => {
           if (initialError) {

@@ -1,8 +1,8 @@
-import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { streamSimple } from "@earendil-works/pi-ai";
+import type { StreamFn } from "openclaw/plugin-sdk/agent-core";
+import { streamSimple } from "openclaw/plugin-sdk/llm";
 import { createSubsystemLogger } from "openclaw/plugin-sdk/logging-core";
 import type { ProviderWrapStreamFnContext } from "openclaw/plugin-sdk/plugin-entry";
-import { createPlainTextToolCallPromotionWrapper } from "openclaw/plugin-sdk/provider-stream-runtime-internal";
+import { createPlainTextToolCallCompatWrapper } from "openclaw/plugin-sdk/provider-stream-shared";
 import { ssrfPolicyFromHttpBaseUrlAllowedHostname } from "openclaw/plugin-sdk/ssrf-runtime";
 import { LMSTUDIO_PROVIDER_ID } from "./defaults.js";
 import { ensureLmstudioModelLoaded } from "./models.fetch.js";
@@ -13,6 +13,7 @@ const log = createSubsystemLogger("extensions/lmstudio/stream");
 
 type StreamOptions = Parameters<StreamFn>[2];
 type StreamModel = Parameters<StreamFn>[0];
+
 const preloadInFlight = new Map<string, Promise<void>>();
 
 /**
@@ -179,7 +180,7 @@ async function ensureLmstudioModelLoadedBestEffort(params: {
 
 export function wrapLmstudioInferencePreload(ctx: ProviderWrapStreamFnContext): StreamFn {
   const underlying = ctx.streamFn ?? streamSimple;
-  const streamWithPlainTextToolCalls = createPlainTextToolCallPromotionWrapper(underlying);
+  const streamWithPlainTextToolCalls = createPlainTextToolCallCompatWrapper(underlying);
   return (model, context, options) => {
     if (model.provider !== LMSTUDIO_PROVIDER_ID) {
       return underlying(model, context, options);
