@@ -35,6 +35,7 @@ mkdirSync(STAGING_DIR, { recursive: true });
 console.log("── Artifacts ──");
 const REQUIRED = ["dist", "openclaw.mjs", "package.json"];
 const TEMPLATES = "docs/reference/templates";
+const AGENT_TEMPLATES = "src/agents/templates";
 for (const item of REQUIRED) {
   const src = path.join(PROJECT_ROOT, item);
   const dst = path.join(STAGING_DIR, item);
@@ -55,6 +56,17 @@ if (existsSync(tmplSrc)) {
   console.log(`  ✓ ${TEMPLATES}`);
 } else {
   console.warn(`  ⚠ ${TEMPLATES} not found — gateway may fail to create workspaces`);
+}
+
+// Copy agent templates (HEARTBEAT.md etc., new in 2026.5.27)
+const agentTmplSrc = path.join(PROJECT_ROOT, AGENT_TEMPLATES);
+const agentTmplDst = path.join(STAGING_DIR, AGENT_TEMPLATES);
+if (existsSync(agentTmplSrc)) {
+  mkdirSync(path.dirname(agentTmplDst), { recursive: true });
+  cpSync(agentTmplSrc, agentTmplDst, { recursive: true, force: true });
+  console.log(`  ✓ ${AGENT_TEMPLATES}`);
+} else {
+  console.warn(`  ⚠ ${AGENT_TEMPLATES} not found`);
 }
 
 // ── 2. Strip devDependencies from package.json (npm install --omit=dev) ──
