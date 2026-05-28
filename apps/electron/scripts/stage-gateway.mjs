@@ -33,7 +33,7 @@ mkdirSync(STAGING_DIR, { recursive: true });
 
 // ── 1. Copy built artifacts ──
 console.log("── Artifacts ──");
-const REQUIRED = ["dist", "openclaw.mjs", "package.json"];
+const REQUIRED = ["dist", "openclaw.mjs", "package.json", "SKILLs"];
 const TEMPLATES = "docs/reference/templates";
 const AGENT_TEMPLATES = "src/agents/templates";
 for (const item of REQUIRED) {
