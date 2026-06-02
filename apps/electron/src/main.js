@@ -134,37 +134,37 @@ function setupPageURL() {
 </head>
 <body>
   <div class="container">
-    <h1>🦞 Welcome to OpenClaw</h1>
-    <p>OpenClaw needs to be set up before first use. This will create a configuration file and workspace directory.</p>
+    <h1>欢迎使用 OpenClaw</h1>
+    <p>首次使用需要进行初始化配置，这将创建配置文件和 workspace 目录。</p>
     <div>
-      <button class="btn" id="setupBtn">Run Setup</button>
-      <button class="btn btn-secondary" id="quitBtn">Quit</button>
+      <button class="btn" id="setupBtn">开始初始化</button>
+      <button class="btn btn-secondary" id="quitBtn">退出</button>
     </div>
     <div class="status" id="status"></div>
   </div>
   <script>
     const statusEl = document.getElementById('status');
-    
+
     document.getElementById('setupBtn').addEventListener('click', async () => {
       document.getElementById('setupBtn').disabled = true;
-      statusEl.textContent = 'Running setup...';
+      statusEl.textContent = '正在初始化...';
       statusEl.className = 'status';
-      
+
       try {
         const result = await window.electronAPI.runSetup();
         if (result.success) {
-          statusEl.textContent = 'Setup complete! Starting gateway...';
+          statusEl.textContent = '初始化完成！正在启动网关...';
           statusEl.className = 'status success';
           setTimeout(() => {
             window.electronAPI.notifySetupComplete();
           }, 1500);
         } else {
-          statusEl.textContent = 'Setup failed: ' + (result.error || 'Unknown error');
+          statusEl.textContent = '初始化失败：' + (result.error || '未知错误');
           statusEl.className = 'status error';
           document.getElementById('setupBtn').disabled = false;
         }
       } catch (err) {
-        statusEl.textContent = 'Setup error: ' + err.message;
+        statusEl.textContent = '初始化出错：' + err.message;
         statusEl.className = 'status error';
         document.getElementById('setupBtn').disabled = false;
       }
@@ -200,8 +200,8 @@ function loadingPageURL() {
 </head>
 <body><div style="text-align:center;">
   <div class="spinner"></div>
-  <h2>Starting OpenClaw Gateway...</h2>
-  <p>Please wait while the gateway starts</p>
+  <h2>正在启动 OpenClaw 网关...</h2>
+  <p>请稍候，网关启动中</p>
 </div></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
@@ -446,7 +446,7 @@ function createTray() {
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: "Show / Hide",
+      label: "显示 / 隐藏",
       click: () => {
         if (mainWindow && mainWindow.isVisible()) {
           mainWindow.hide();
@@ -456,12 +456,12 @@ function createTray() {
       },
     },
     {
-      label: "Restart Gateway",
+      label: "重启网关",
       click: () => restartGateway(),
     },
     { type: "separator" },
     {
-      label: "Quit",
+      label: "退出",
       click: () => { app.isQuitting = true; app.quit(); },
     },
   ]);
