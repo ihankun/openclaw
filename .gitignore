@@ -1,5 +1,8 @@
 node_modules
 **/node_modules/
+apps/electron/release/
+apps/electron/resources/node/
+apps/electron/build-staging/
 .env
 docker-compose.override.yml
 docker-compose.extra.yml
