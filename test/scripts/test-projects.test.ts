@@ -267,6 +267,29 @@ describe("scripts/test-projects changed-target routing", () => {
     });
   });
 
+  it("routes unmatched script changes to the tooling suite instead of skipping tests", () => {
+    const targets = [
+      "scripts/check-no-raw-http2-imports.mjs",
+      "scripts/e2e/lib/clawhub-fixture-server.cjs",
+      "scripts/install.ps1",
+    ];
+
+    expect(resolveChangedTestTargetPlan(targets)).toEqual({
+      mode: "targets",
+      targets: ["test/vitest/vitest.tooling.config.ts"],
+    });
+    expect(buildVitestRunPlans(["--changed", "origin/main"], process.cwd(), () => targets)).toEqual(
+      [
+        {
+          config: "test/vitest/vitest.tooling.config.ts",
+          forwardedArgs: [],
+          includePatterns: null,
+          watchMode: false,
+        },
+      ],
+    );
+  });
+
   it("routes Z.AI fallback repro script changes through its regression test", () => {
     expect(resolveChangedTestTargetPlan(["scripts/zai-fallback-repro.ts"])).toEqual({
       mode: "targets",
@@ -776,6 +799,36 @@ describe("scripts/test-projects changed-target routing", () => {
           "test/scripts/plugin-lifecycle-measure.test.ts",
           "test/scripts/docker-e2e-plan.test.ts",
           "test/scripts/release-media-memory-scenario.test.ts",
+        ],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("routes changed Parallels process helpers to their owner tooling tests", () => {
+    expect(
+      buildVitestRunPlans(["--changed", "origin/main"], process.cwd(), () => [
+        "scripts/e2e/parallels/filesystem.ts",
+        "scripts/e2e/parallels/guest-transports.ts",
+        "scripts/e2e/parallels/host-command.ts",
+        "scripts/e2e/parallels/host-server.ts",
+        "scripts/e2e/parallels/linux-smoke.ts",
+        "scripts/e2e/parallels/phase-runner.ts",
+        "scripts/e2e/parallels/macos-smoke.ts",
+        "scripts/e2e/parallels/npm-update-smoke.ts",
+        "scripts/e2e/parallels/npm-update-scripts.ts",
+        "scripts/e2e/parallels/smoke-common.ts",
+        "scripts/e2e/parallels/update-job-timeout.ts",
+        "scripts/e2e/parallels/windows-smoke.ts",
+      ]),
+    ).toEqual([
+      {
+        config: "test/vitest/vitest.tooling.config.ts",
+        forwardedArgs: [],
+        includePatterns: [
+          "test/scripts/parallels-smoke-model.test.ts",
+          "test/scripts/parallels-npm-update-smoke.test.ts",
+          "test/scripts/parallels-update-job-timeout.test.ts",
         ],
         watchMode: false,
       },
@@ -1303,6 +1356,28 @@ describe("scripts/test-projects changed-target routing", () => {
         config: "test/vitest/vitest.unit-ui.config.ts",
         forwardedArgs: [],
         includePatterns: ["ui/src/ui/views/dreaming.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("keeps explicit non-renderer ui test targets scoped", () => {
+    expect(
+      buildVitestRunPlans([
+        "ui/src/i18n/test/translate.test.ts",
+        "test/scripts/control-ui-i18n.test.ts",
+      ]),
+    ).toEqual([
+      {
+        config: "test/vitest/vitest.tooling.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["test/scripts/control-ui-i18n.test.ts"],
+        watchMode: false,
+      },
+      {
+        config: "test/vitest/vitest.ui.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["ui/src/i18n/test/translate.test.ts"],
         watchMode: false,
       },
     ]);
