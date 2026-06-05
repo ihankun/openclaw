@@ -141,9 +141,19 @@ describe("package acceptance workflow", () => {
     expect(hydratePnpm.if).toBeUndefined();
     expect(hydratePnpm.run).toContain('corepack enable --install-directory "$PNPM_HOME"');
     expect(hydratePnpm.run).toContain("COREPACK_HOME");
-    expect(hydratePnpm.run).toContain("reset_crabbox_pnpm_root");
-    expect(hydratePnpm.run).toContain('rm -rf -- "$root"');
-    expect(hydratePnpm.run).toContain("Refusing unsafe pnpm cache root");
+    expect(workflowText).toContain('PNPM_CONFIG_STORE_DIR: "/var/cache/crabbox/pnpm/store"');
+    expect(hydratePnpm.run).toContain("prepare_crabbox_pnpm_dirs");
+    expect(hydratePnpm.run).toContain('case "${PNPM_CONFIG_MODULES_DIR:?}" in "$volatile_root"/*)');
+    expect(hydratePnpm.run).toContain(
+      'case "${PNPM_CONFIG_VIRTUAL_STORE_DIR:?}" in "$volatile_root"/*)',
+    );
+    expect(hydratePnpm.run).toContain('rm -rf -- "$volatile_root"');
+    expect(hydratePnpm.run).toContain('mkdir -p "$volatile_root" "$PNPM_CONFIG_STORE_DIR"');
+    expect(hydratePnpm.run).toContain(
+      'mkdir -p "$PNPM_CONFIG_MODULES_DIR" "$PNPM_CONFIG_VIRTUAL_STORE_DIR"',
+    );
+    expect(hydratePnpm.run).toContain("Refusing unsafe pnpm directory");
+    expect(hydratePnpm.run).not.toContain('rm -rf -- "${PNPM_CONFIG_MODULES_DIR:?}"');
     expect(hydratePnpm.run).toContain(
       '[ "$(readlink node_modules)" = "${PNPM_CONFIG_MODULES_DIR:-}" ]',
     );
@@ -908,6 +918,11 @@ describe("package artifact reuse", () => {
   it("fails Droid ACP Docker live proof when Factory auth is missing", () => {
     const script = readFileSync("scripts/test-live-acp-bind-docker.sh", "utf8");
 
+    expect(script).toContain("openclaw_live_acp_bind_load_factory_api_key_from_profile");
+    expect(script).not.toContain('source "$PROFILE_FILE"');
+    expect(script.indexOf("openclaw_live_acp_bind_load_factory_api_key_from_profile")).toBeLessThan(
+      script.indexOf('if [[ "$ACP_AGENT" == "droid" && -z "${FACTORY_API_KEY:-}" ]]; then'),
+    );
     expect(script).toContain(
       "ERROR: Droid Docker ACP bind requires FACTORY_API_KEY; Factory OAuth/keyring auth in ~/.factory is not portable into the container.",
     );
@@ -1534,8 +1549,10 @@ describe("package artifact reuse", () => {
     const job = workflowJob(TUI_PTY_WORKFLOW, "tui-pty");
     const step = workflowStep(job, "Run TUI PTY tests");
 
+    expect(job.env?.OPENCLAW_TUI_PTY_INCLUDE_LOCAL).toBe("1");
+    expect(job["timeout-minutes"]).toBe(8);
     expect(step.run).toBe(
-      "timeout --kill-after=30s 120s node scripts/run-vitest.mjs run --config test/vitest/vitest.tui-pty.config.ts",
+      "timeout --kill-after=30s 240s node scripts/run-vitest.mjs run --config test/vitest/vitest.tui-pty.config.ts",
     );
   });
 });
