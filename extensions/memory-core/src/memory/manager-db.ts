@@ -19,8 +19,8 @@ import {
 // own a young temp DB without losing its in-flight rebuild.
 const reindexTempFileWithoutLockMinAgeMs = 24 * 60 * 60_000;
 const reindexTempUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const memoryIndexFileSuffixes = ["", "-wal", "-shm"] as const;
-const reindexTempEntrySuffixes = ["-wal", "-shm", ""] as const;
+const memoryIndexFileSuffixes = ["", "-wal", "-shm", "-journal"] as const;
+const reindexTempEntrySuffixes = ["-wal", "-shm", "-journal", ""] as const;
 
 function resolveReindexTempBaseName(dbBaseName: string, entryName: string): string | undefined {
   for (const suffix of reindexTempEntrySuffixes) {
@@ -127,11 +127,18 @@ export function cleanupAgedMemoryReindexTempFiles(dbPath: string, nowMs = Date.n
 function openConfiguredMemoryDatabaseAtPath(dbPath: string, allowExtension: boolean): DatabaseSync {
   const { DatabaseSync } = requireNodeSqlite();
   const db = new DatabaseSync(dbPath, { allowExtension });
-  configureMemorySqliteWalMaintenance(db, {
-    busyTimeoutMs: 5000,
-    databasePath: dbPath,
-  });
-  return db;
+  try {
+    configureMemorySqliteWalMaintenance(db, {
+      busyTimeoutMs: 5000,
+      databasePath: dbPath,
+    });
+    return db;
+  } catch (err) {
+    try {
+      db.close();
+    } catch {}
+    throw err;
+  }
 }
 
 type ExistingMemoryDatabaseOpenResult =
