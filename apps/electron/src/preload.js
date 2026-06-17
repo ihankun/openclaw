@@ -29,6 +29,12 @@ const electronAPI = {
   /** Quit the application. */
   quitApp: () => ipcRenderer.send("quit-app"),
 
+  /** Load electron config. */
+  getConfig: () => ipcRenderer.invoke("config:get"),
+
+  /** Save electron config (partial merge). */
+  saveConfig: (partial) => ipcRenderer.invoke("config:save", partial),
+
   /** Listen for gateway-ready event. Returns unsubscribe function. */
   onGatewayReady: (callback) => {
     const handler = (_event, data) => callback(data);

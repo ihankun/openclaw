@@ -13,6 +13,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
 const process = require("node:process");
+const os = require("node:os");
 
 // ============================================================================
 // Debug Logging (for packaged-mode troubleshooting)
@@ -44,6 +45,17 @@ const GATEWAY_FORCE_KILL_TIMEOUT_MS = 5_000;
 const isDevelopment = !app.isPackaged || process.env.NODE_ENV === "development";
 const isMac = process.platform === "darwin";
 const isWindows = process.platform === "win32";
+
+// ============================================================================
+// Electron Config
+// ============================================================================
+const ELECTRON_CONFIG_DIR = path.join(os.homedir(), ".openclaw", "electron");
+const ELECTRON_CONFIG_PATH = path.join(ELECTRON_CONFIG_DIR, "config.json");
+const ELECTRON_CONFIG_DEFAULTS = {
+  hideDockOnClose: false,
+};
+
+let electronConfig = { ...ELECTRON_CONFIG_DEFAULTS };
 
 // ============================================================================
 // State
@@ -84,10 +96,52 @@ function resolveTrayIcon() {
 }
 
 // ============================================================================
-// Initialization Check
+// Electron Config
 // ============================================================================
 
-const os = require("node:os");
+function loadElectronConfig() {
+  try {
+    if (fs.existsSync(ELECTRON_CONFIG_PATH)) {
+      const raw = fs.readFileSync(ELECTRON_CONFIG_PATH, "utf-8");
+      const parsed = JSON.parse(raw);
+      electronConfig = { ...ELECTRON_CONFIG_DEFAULTS, ...parsed };
+      log("Config loaded from", ELECTRON_CONFIG_PATH, JSON.stringify(electronConfig));
+    } else {
+      electronConfig = { ...ELECTRON_CONFIG_DEFAULTS };
+      log("Config not found, using defaults");
+    }
+  } catch (err) {
+    log("Error loading config:", err.message);
+    electronConfig = { ...ELECTRON_CONFIG_DEFAULTS };
+  }
+}
+
+function saveElectronConfig(partial) {
+  try {
+    const updated = { ...electronConfig, ...partial };
+    fs.mkdirSync(ELECTRON_CONFIG_DIR, { recursive: true });
+    fs.writeFileSync(ELECTRON_CONFIG_PATH, JSON.stringify(updated, null, 2), "utf-8");
+    electronConfig = updated;
+    log("Config saved:", JSON.stringify(updated));
+    return { success: true };
+  } catch (err) {
+    log("Error saving config:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+function applyDockBehavior() {
+  if (!isMac) return;
+  if (electronConfig.hideDockOnClose && mainWindow && !mainWindow.isVisible()) {
+    app.dock.hide();
+  } else {
+    app.dock.show();
+  }
+}
+
+// ============================================================================
+// Initialization Check
+// ============================================================================
 
 function checkNeedsSetup() {
   try {
@@ -179,31 +233,16 @@ function setupPageURL() {
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
+function resolveRendererPath(name) {
+  return path.join(__dirname, "renderer", name);
+}
+
 // ============================================================================
 // Loading Page
 // ============================================================================
 
 function loadingPageURL() {
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { margin:0; display:flex; align-items:center; justify-content:center;
-           height:100vh; font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-           background:#1a1a2e; color:#e0e0e0; }
-    .spinner { width:40px; height:40px; border:4px solid #333; border-top-color:#6c63ff;
-               border-radius:50%; animation:spin .8s linear infinite; margin:0 auto 20px; }
-    @keyframes spin { to { transform:rotate(360deg); } }
-    p { color:#888; font-size:14px; }
-  </style>
-</head>
-<body><div style="text-align:center;">
-  <div class="spinner"></div>
-  <h2>正在启动 OpenClaw 网关...</h2>
-  <p>请稍候，网关启动中</p>
-</div></body></html>`;
-  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+  return resolveRendererPath("loading.html");
 }
 
 // ============================================================================
@@ -238,6 +277,56 @@ function resolveNodeBinary() {
     if (fs.existsSync(bin)) return bin;
   }
   return null;
+}
+
+// ============================================================================
+// Settings Window
+// ============================================================================
+
+let settingsWindow = null;
+
+function settingsPageURL() {
+  return resolveRendererPath("settings.html");
+}
+
+function createSettingsWindow() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.show();
+    settingsWindow.focus();
+    return;
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 480,
+    height: 260,
+    resizable: false,
+    title: "OpenClaw 设置",
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+
+  // Load settings page from renderer file
+  settingsWindow.loadFile(settingsPageURL());
+
+  settingsWindow.once("ready-to-show", () => {
+    settingsWindow.show();
+  });
+
+  settingsWindow.on("closed", () => {
+    settingsWindow = null;
+  });
+
+  // Prevent hiding to tray for settings window
+  settingsWindow.on("close", (event) => {
+    if (!settingsWindow) return;
+    // Allow normal close (no hide-to-tray for settings)
+  });
 }
 
 // ============================================================================
@@ -378,6 +467,7 @@ function showMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
     mainWindow.focus();
+    applyDockBehavior();
   } else {
     createMainWindow();
   }
@@ -399,7 +489,7 @@ function createMainWindow() {
     },
   });
 
-  mainWindow.loadURL(loadingPageURL());
+  mainWindow.loadFile(loadingPageURL());
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
@@ -421,6 +511,7 @@ function createMainWindow() {
     if (!app.isQuitting) {
       event.preventDefault();
       mainWindow.hide();
+      applyDockBehavior();
     }
   });
 
@@ -450,6 +541,7 @@ function createTray() {
       click: () => {
         if (mainWindow && mainWindow.isVisible()) {
           mainWindow.hide();
+          applyDockBehavior();
         } else {
           showMainWindow();
         }
@@ -458,6 +550,11 @@ function createTray() {
     {
       label: "重启网关",
       click: () => restartGateway(),
+    },
+    { type: "separator" },
+    {
+      label: "配置",
+      click: () => createSettingsWindow(),
     },
     { type: "separator" },
     {
@@ -480,58 +577,71 @@ function createApplicationMenu() {
           new MenuItem({
             label: app.name,
             submenu: [
-              { role: "about" },
+              { label: `关于 ${app.name}`, role: "about" },
               { type: "separator" },
               { role: "services" },
               { type: "separator" },
-              { role: "hide" },
-              { role: "hideOthers" },
-              { role: "unhide" },
+              { label: "隐藏", role: "hide" },
+              { label: "隐藏其他", role: "hideOthers" },
+              { label: "显示全部", role: "unhide" },
               { type: "separator" },
-              { role: "quit" },
+              { label: "退出", role: "quit" },
             ],
           }),
         ]
       : []),
     new MenuItem({
-      label: "File",
+      label: "文件",
       submenu: [
-        { label: "Restart Gateway", accelerator: "CmdOrCtrl+Shift+R", click: () => restartGateway() },
+        { label: "重启网关", accelerator: "CmdOrCtrl+Shift+R", click: () => restartGateway() },
+        { label: "配置", accelerator: "CmdOrCtrl+,", click: () => createSettingsWindow() },
         { type: "separator" },
-        { role: "close" },
+        { label: "关闭窗口", accelerator: "CmdOrCtrl+W", click: () => { if (mainWindow) mainWindow.close(); } },
       ],
     }),
     new MenuItem({
-      label: "Edit",
+      label: "编辑",
       submenu: [
-        { role: "undo" }, { role: "redo" }, { type: "separator" },
-        { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "delete" },
-        { type: "separator" }, { role: "selectAll" },
+        { label: "撤销", accelerator: "CmdOrCtrl+Z", role: "undo" },
+        { label: "重做", accelerator: "CmdOrCtrl+Shift+Z", role: "redo" },
+        { type: "separator" },
+        { label: "剪切", accelerator: "CmdOrCtrl+X", role: "cut" },
+        { label: "复制", accelerator: "CmdOrCtrl+C", role: "copy" },
+        { label: "粘贴", accelerator: "CmdOrCtrl+V", role: "paste" },
+        { label: "删除", role: "delete" },
+        { type: "separator" },
+        { label: "全选", accelerator: "CmdOrCtrl+A", role: "selectAll" },
       ],
     }),
     new MenuItem({
-      label: "View",
+      label: "视图",
       submenu: [
-        { role: "reload" }, { role: "forceReload" },
+        { label: "重新加载", accelerator: "CmdOrCtrl+R", role: "reload" },
+        { label: "强制重新加载", accelerator: "CmdOrCtrl+Shift+R", role: "forceReload" },
         { type: "separator" },
-        { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" },
+        { label: "重置缩放", accelerator: "CmdOrCtrl+0", role: "resetZoom" },
+        { label: "放大", accelerator: "CmdOrCtrl+=", role: "zoomIn" },
+        { label: "缩小", accelerator: "CmdOrCtrl+-", role: "zoomOut" },
         { type: "separator" },
-        { role: "togglefullscreen" },
+        { label: "全屏", role: "togglefullscreen" },
         { type: "separator" },
-        { role: "toggleDevTools" },
+        { label: "开发者工具", accelerator: "CmdOrCtrl+Shift+I", role: "toggleDevTools" },
       ],
     }),
     new MenuItem({
-      label: "Window",
+      label: "窗口",
       submenu: [
-        { role: "minimize" }, { role: "zoom" }, { type: "separator" }, { role: "front" },
+        { label: "最小化", accelerator: "CmdOrCtrl+M", role: "minimize" },
+        { role: "zoom" },
+        { type: "separator" },
+        { label: "置于顶层", role: "front" },
       ],
     }),
     new MenuItem({
-      role: "help",
+      label: "帮助",
       submenu: [
-        { label: "OpenClaw Documentation", click: () => shell.openExternal("https://docs.openclaw.ai") },
-        { label: "Report Issue", click: () => shell.openExternal("https://github.com/openclaw/openclaw/issues") },
+        { label: "OpenClaw 文档", click: () => shell.openExternal("https://docs.openclaw.ai") },
+        { label: "报告问题", click: () => shell.openExternal("https://github.com/openclaw/openclaw/issues") },
       ],
     }),
   ];
@@ -622,6 +732,17 @@ function setupIpcHandlers() {
     app.isQuitting = true;
     app.quit();
   });
+  
+  // Config
+  ipcMain.handle("config:get", () => ({ ...electronConfig }));
+  ipcMain.handle("config:save", (_event, partial) => {
+    const result = saveElectronConfig(partial);
+    // If hideDockOnClose changed, apply immediately
+    if (result.success && "hideDockOnClose" in partial) {
+      applyDockBehavior();
+    }
+    return result;
+  });
 }
 
 // ============================================================================
@@ -629,6 +750,7 @@ function setupIpcHandlers() {
 // ============================================================================
 
 async function onAppReady() {
+  loadElectronConfig();
   Menu.setApplicationMenu(createApplicationMenu());
   setupIpcHandlers();
   createTray();
