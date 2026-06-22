@@ -1,0 +1,59 @@
+appId: ai.openclaw.desktop
+productName: OpenClaw
+copyright: Copyright © 2024 OpenClaw
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - src/**/*
+  - assets/**/*
+  - '!scripts/**'
+  - '!build-staging/**'
+
+# Tray icon must be outside asar (nativeImage.createFromPath cannot read inside asar)
+asarUnpack:
+  - assets/tray-icon.png
+
+extraResources:
+  # Staged gateway runtime (created by scripts/stage-gateway.mjs)
+  - from: build-staging/gateway
+    to: gateway
+    filter:
+      - "**/*"
+  # Bundled Node.js binary (downloaded by scripts/download-node.mjs)
+  - from: resources/node
+    to: node
+    filter:
+      - "**/*"
+
+mac:
+  icon: resources/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  category: public.app-category.productivity
+  hardenedRuntime: false
+  artifactName: "${productName}-${version}-mac-${arch}.${ext}"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: "${productName}-${version}-win-x64.${ext}"
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Utility
+  artifactName: "${productName}-${version}-linux-x64.${ext}"
+

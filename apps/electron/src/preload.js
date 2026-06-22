@@ -1,0 +1,59 @@
+/**
+ * OpenClaw Desktop - Preload Script
+ *
+ * Bridges the isolated renderer process with the Electron main process
+ * via contextBridge. The exposed `window.electronAPI` is the only way
+ * for the web UI to interact with native capabilities.
+ */
+const { contextBridge, ipcRenderer } = require("electron");
+
+const electronAPI = {
+  /** Get current gateway status. */
+  getGatewayStatus: () => ipcRenderer.invoke("gateway:status"),
+
+  /** Restart the gateway process. */
+  restartGateway: () => ipcRenderer.invoke("gateway:restart"),
+
+  /** Get app info (version, dev mode, etc.). */
+  getAppInfo: () => ipcRenderer.invoke("app:info"),
+
+  /** Open a URL in the system browser. */
+  openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
+
+  /** Run setup command (for first-time initialization). */
+  runSetup: () => ipcRenderer.invoke("run-setup"),
+
+  /** Notify that setup is complete. */
+  notifySetupComplete: () => ipcRenderer.send("setup-complete"),
+
+  /** Quit the application. */
+  quitApp: () => ipcRenderer.send("quit-app"),
+
+  /** Load electron config. */
+  getConfig: () => ipcRenderer.invoke("config:get"),
+
+  /** Save electron config (partial merge). */
+  saveConfig: (partial) => ipcRenderer.invoke("config:save", partial),
+
+  /** Listen for gateway-ready event. Returns unsubscribe function. */
+  onGatewayReady: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on("gateway:ready", handler);
+    return () => ipcRenderer.removeListener("gateway:ready", handler);
+  },
+
+  /** Listen for gateway-exited event. Returns unsubscribe function. */
+  onGatewayExited: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on("gateway:exited", handler);
+    return () => ipcRenderer.removeListener("gateway:exited", handler);
+  },
+
+  /** Detect if running inside Electron. */
+  isElectron: () => true,
+
+  /** Get the gateway URL. */
+  getGatewayUrl: () => "http://127.0.0.1:18789",
+};
+
+contextBridge.exposeInMainWorld("electronAPI", electronAPI);

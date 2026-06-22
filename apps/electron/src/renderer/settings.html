@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenClaw 设置</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      /* Light (Red Theme) */
+      --bg: #f8f6f2;
+      --card-bg: #ffffff;
+      --text: #1f2937;
+      --text-muted: #6b7280;
+      --text-desc: #9ca3af;
+      --accent: #dc2626;
+      --accent-hover: #b91c1c;
+      --accent-subtle: rgba(220, 38, 38, 0.10);
+      --border: #e5e7eb;
+      --border-item: #e5e7eb;
+      --toggle-bg: #d1d5db;
+      --toggle-knob: #ffffff;
+      --toggle-active: #dc2626;
+      --heading-border: #e5e7eb;
+      --toast-success-bg: #16a34a;
+      --toast-error-bg: #dc2626;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        /* Dark (Purple Theme) */
+        --bg: #1a1a2e;
+        --card-bg: transparent;
+        --text: #e0e0e0;
+        --text-muted: #c0c0c0;
+        --text-desc: #888;
+        --accent: #6c63ff;
+        --accent-hover: #5a52d5;
+        --accent-subtle: rgba(108, 99, 255, 0.12);
+        --border: #2a2a3e;
+        --border-item: #2a2a3e;
+        --toggle-bg: #444;
+        --toggle-knob: #ffffff;
+        --toggle-active: #6c63ff;
+        --heading-border: #333;
+        --toast-success-bg: #2b8a3e;
+        --toast-error-bg: #c92a2a;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 28px 24px;
+      transition: background 0.3s, color 0.3s;
+      padding-top: 38px;
+    }
+
+    /* Drag region at top for hidden title bar */
+    .titlebar-spacer {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 38px;
+      -webkit-app-region: drag;
+      z-index: 100;
+    }
+
+    h1 {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--heading-border);
+      transition: border-color 0.3s;
+    }
+
+    .item {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border-item);
+      transition: border-color 0.3s;
+    }
+    .item:last-child { border-bottom: none; }
+
+    .label {
+      font-size: 14px;
+      line-height: 1.5;
+      flex: 1;
+    }
+    .label .title-text { color: var(--text); }
+    .label .desc {
+      font-size: 12px;
+      color: var(--text-desc);
+      margin-top: 3px;
+      transition: color 0.3s;
+    }
+
+    /* Toggle Switch */
+    .toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+      margin-left: 20px;
+      margin-top: 2px;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: var(--toggle-bg);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.25s;
+    }
+    .slider::before {
+      content: "";
+      position: absolute;
+      left: 2px; top: 2px;
+      width: 20px; height: 20px;
+      background: var(--toggle-knob);
+      border-radius: 50%;
+      transition: transform 0.25s, background 0.25s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .toggle input:checked + .slider { background: var(--toggle-active); }
+    .toggle input:checked + .slider::before { transform: translateX(20px); }
+
+    /* Hover effect */
+    .toggle:hover .slider {
+      box-shadow: 0 0 0 3px var(--accent-subtle);
+    }
+
+    .item:hover {
+      background: var(--accent-subtle);
+      margin: 0 -8px;
+      padding-left: 8px;
+      padding-right: 8px;
+      border-radius: 6px;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: none;
+      white-space: nowrap;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .toast.success { background: var(--toast-success-bg); color: #fff; }
+    .toast.error { background: var(--toast-error-bg); color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="titlebar-spacer"></div>
+  <h1>设置</h1>
+
+  <div class="item">
+    <div class="label">
+      <div class="title-text">关闭窗口后隐藏 Dock 栏图标</div>
+      <div class="desc">关闭主窗口时自动隐藏 macOS Dock 中的应用图标</div>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" id="hideDockOnClose">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const checkbox = document.getElementById('hideDockOnClose');
+    const toastEl = document.getElementById('toast');
+    let toastTimer = null;
+
+    function showToast(msg, type) {
+      toastEl.textContent = msg;
+      toastEl.className = 'toast ' + type + ' show';
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toastEl.className = 'toast'; }, 2000);
+    }
+
+    if (window.electronAPI) {
+      window.electronAPI.getConfig().then((config) => {
+        checkbox.checked = config.hideDockOnClose;
+      });
+    }
+
+    checkbox.addEventListener('change', async (e) => {
+      const value = e.target.checked;
+      if (!window.electronAPI) {
+        showToast('当前环境不支持保存', 'error');
+        return;
+      }
+      const result = await window.electronAPI.saveConfig({ hideDockOnClose: value });
+      if (result.success) {
+        showToast('设置已保存', 'success');
+      } else {
+        showToast('保存失败：' + (result.error || '未知错误'), 'error');
+      }
+    });
+  </script>
+</body>
+</html>

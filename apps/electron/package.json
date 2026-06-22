@@ -1,0 +1,20 @@
+{
+  "name": "openclaw-desktop",
+  "version": "2026.6.8",
+  "description": "OpenClaw Desktop - Electron wrapper",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "postinstall": "node scripts/generate-icon.mjs && electron-builder install-app-deps",
+    "dev": "node scripts/generate-icon.mjs && electron src/main.js",
+    "start": "node scripts/generate-icon.mjs && electron src/main.js",
+    "build": "node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build",
+    "build:mac": "node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build --mac",
+    "build:win": "node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build --win",
+    "build:linux": "node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build --linux"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}
