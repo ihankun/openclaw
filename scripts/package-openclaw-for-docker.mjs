@@ -14,7 +14,10 @@ const DEFAULT_PACKAGE_INVENTORY_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_PACKAGE_PACK_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_PACKAGE_TARBALL_CHECK_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT_KILL_AFTER_MS = 5_000;
+const PROCESS_GROUP_EXIT_POLL_MS = 25;
+const POST_FORCE_KILL_WAIT_MS = 1_000;
 const DEFAULT_CAPTURED_STDOUT_MAX_BYTES = 1024 * 1024;
+const MAX_TIMER_TIMEOUT_MS = 2_147_000_000;
 const ACTIVE_CHILD_KILLERS = new Set();
 const SIGNAL_EXIT_CODES = {
   SIGHUP: 129,
@@ -63,16 +66,33 @@ function resolveTimeoutMs(envName, defaultValue) {
   return parsed;
 }
 
+function numericTimerValueMs(valueMs) {
+  const value = Number(valueMs);
+  return Number.isFinite(value) ? Math.floor(value) : undefined;
+}
+
+function resolveTimerTimeoutMs(valueMs, fallbackMs = MAX_TIMER_TIMEOUT_MS) {
+  const value = numericTimerValueMs(valueMs) ?? numericTimerValueMs(fallbackMs);
+  return Math.min(Math.max(value ?? MAX_TIMER_TIMEOUT_MS, 1), MAX_TIMER_TIMEOUT_MS);
+}
+
+function resolveOptionalTimerTimeoutMs(valueMs) {
+  if (valueMs === undefined) {
+    return undefined;
+  }
+  return resolveTimerTimeoutMs(valueMs, 1);
+}
+
 function readOptionValue(argv, index, optionName) {
   const value = argv[index + 1];
-  if (value === undefined || value === "" || value.startsWith("--")) {
+  if (value === undefined || value === "" || value.startsWith("-")) {
     throw new Error(`${optionName} requires a value`);
   }
   return value;
 }
 
 function readEqualsOptionValue(value, optionName) {
-  if (value === "" || value.startsWith("--")) {
+  if (value === "" || value.startsWith("-")) {
     throw new Error(`${optionName} requires a value`);
   }
   return value;
@@ -82,6 +102,28 @@ function validateOutputName(value) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.t(?:ar\.)?gz$/u.test(value)) {
     throw new Error(`--output-name must be a tarball filename, not a path: ${value}`);
   }
+}
+
+function resolvePackedOpenClawFileName(value) {
+  const filename = value.trim();
+  if (
+    !filename.endsWith(".tgz") ||
+    (!filename.startsWith("openclaw-") &&
+      !filename.includes(":") &&
+      !filename.includes("/") &&
+      !filename.includes("\\"))
+  ) {
+    return "";
+  }
+  if (
+    !/^openclaw-[A-Za-z0-9._-]+\.tgz$/u.test(filename) ||
+    filename.includes("\0") ||
+    filename !== path.basename(filename) ||
+    filename !== path.win32.basename(filename)
+  ) {
+    throw new Error(`npm pack reported unsafe OpenClaw tarball filename: ${filename}`);
+  }
+  return filename;
 }
 
 export function parseArgs(argv) {
@@ -125,6 +167,11 @@ export function parseArgs(argv) {
 
 function run(command, args, cwd, options = {}) {
   return new Promise((resolve, reject) => {
+    const resolvedTimeoutMs = resolveOptionalTimerTimeoutMs(options.timeoutMs);
+    const resolvedKillAfterMs = resolveTimerTimeoutMs(
+      options.killAfterMs,
+      DEFAULT_TIMEOUT_KILL_AFTER_MS,
+    );
     const useProcessGroup = process.platform !== "win32";
     const child = spawn(command, args, {
       cwd,
@@ -186,6 +233,18 @@ function run(command, args, cwd, options = {}) {
         return error?.code === "EPERM";
       }
     };
+    const waitForProcessGroupExit = async (timeoutMs) => {
+      const deadlineAt = Date.now() + timeoutMs;
+      while (Date.now() < deadlineAt) {
+        if (!processGroupAlive()) {
+          return true;
+        }
+        await new Promise((resolvePoll) => {
+          setTimeout(resolvePoll, PROCESS_GROUP_EXIT_POLL_MS);
+        });
+      }
+      return !processGroupAlive();
+    };
     const terminateChild = () => {
       killChild("SIGTERM");
       forceKillTimeout = setTimeout(() => {
@@ -194,18 +253,28 @@ function run(command, args, cwd, options = {}) {
           return;
         }
         killChild("SIGKILL");
-      }, options.killAfterMs ?? DEFAULT_TIMEOUT_KILL_AFTER_MS);
+      }, resolvedKillAfterMs);
       forceKillTimeout.unref?.();
     };
     ACTIVE_CHILD_KILLERS.add(killChild);
     const timeout =
-      options.timeoutMs === undefined
+      resolvedTimeoutMs === undefined
         ? undefined
         : setTimeout(() => {
             timedOut = true;
             terminateChild();
-          }, options.timeoutMs);
+          }, resolvedTimeoutMs);
     timeout?.unref?.();
+    const finishAfterTeardown = async (error, value = "") => {
+      if (processGroupAlive()) {
+        await waitForProcessGroupExit(resolvedKillAfterMs);
+      }
+      if (processGroupAlive()) {
+        killChild("SIGKILL");
+        await waitForProcessGroupExit(POST_FORCE_KILL_WAIT_MS);
+      }
+      finish(error, value);
+    };
     if (options.captureStdout) {
       child.stdout.on("data", (chunk) => {
         if (outputLimitExceeded) {
@@ -228,11 +297,13 @@ function run(command, args, cwd, options = {}) {
     child.on("error", (error) => finish(error));
     child.on("close", (status, signal) => {
       if (timedOut) {
-        finish(new Error(`${command} ${args.join(" ")} timed out after ${options.timeoutMs}ms`));
+        void finishAfterTeardown(
+          new Error(`${command} ${args.join(" ")} timed out after ${resolvedTimeoutMs}ms`),
+        );
         return;
       }
       if (outputLimitExceeded) {
-        finish(
+        void finishAfterTeardown(
           new Error(
             `${command} ${args.join(" ")} exceeded captured stdout limit (${maxCapturedStdoutBytes} bytes)`,
           ),
@@ -283,9 +354,9 @@ async function runCapture(command, args, cwd, options = {}) {
 async function newestOpenClawTarball(outputDir, packOutput) {
   let fromOutput = "";
   for (const line of packOutput.split(/\r?\n/u)) {
-    const trimmed = line.trim();
-    if (/^openclaw-.*\.tgz$/u.test(trimmed)) {
-      fromOutput = trimmed;
+    const filename = resolvePackedOpenClawFileName(line);
+    if (filename) {
+      fromOutput = filename;
     }
   }
   if (fromOutput) {
@@ -294,13 +365,43 @@ async function newestOpenClawTarball(outputDir, packOutput) {
 
   const entries = await fs.readdir(outputDir);
   const packed = entries
-    .filter((entry) => /^openclaw-.*\.tgz$/u.test(entry))
+    .filter((entry) => {
+      try {
+        return resolvePackedOpenClawFileName(entry) === entry;
+      } catch {
+        return false;
+      }
+    })
     .toSorted()
     .at(-1);
   if (!packed) {
     throw new Error(`missing packed OpenClaw tarball in ${outputDir}`);
   }
   return path.join(outputDir, packed);
+}
+
+async function cleanPackedOpenClawTarballs(outputDir) {
+  let entries;
+  try {
+    entries = await fs.readdir(outputDir);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      entries = [];
+    } else {
+      throw error;
+    }
+  }
+  await Promise.all(
+    entries
+      .filter((entry) => {
+        try {
+          return resolvePackedOpenClawFileName(entry) === entry;
+        } catch {
+          return false;
+        }
+      })
+      .map((entry) => fs.rm(path.join(outputDir, entry), { force: true })),
+  );
 }
 
 export async function packOpenClawPackageForDocker(sourceDir, outputDir, options = {}) {
@@ -311,6 +412,7 @@ export async function packOpenClawPackageForDocker(sourceDir, outputDir, options
   await prepareChangelog(sourceDir);
   let packOutput;
   try {
+    await cleanPackedOpenClawTarballs(outputDir);
     packOutput = await runCaptureImpl(
       "npm",
       ["pack", "--silent", "--ignore-scripts", "--pack-destination", outputDir],

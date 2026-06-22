@@ -30,6 +30,7 @@ import {
   type ChannelProgressDraftLine,
   type ChannelProgressDraftCompositorLine,
   createChannelProgressDraftCompositor,
+  resolveChannelProgressDraftLabel,
   resolveChannelStreamingBlockEnabled,
   resolveTranscriptBackedChannelFinalText,
 } from "openclaw/plugin-sdk/channel-outbound";
@@ -137,7 +138,6 @@ import {
   buildTelegramNonInterruptingReplyFenceKey,
   buildTelegramReplyFenceLaneKey,
   endTelegramReplyFence,
-  getTelegramReplyFenceSizeForTests,
   isTelegramReplyFenceSuperseded,
   releaseTelegramReplyFenceAbortController,
   resetTelegramReplyFenceForTests,
@@ -146,7 +146,7 @@ import {
   supersedeTelegramReplyFence,
 } from "./telegram-reply-fence.js";
 
-export { getTelegramReplyFenceSizeForTests, resetTelegramReplyFenceForTests };
+export { resetTelegramReplyFenceForTests };
 
 const EMPTY_RESPONSE_FALLBACK = "No response generated. Please try again.";
 const silentReplyDispatchLogger = createSubsystemLogger("telegram/silent-reply-dispatch");
@@ -318,6 +318,7 @@ function resolveTelegramMirroredTranscriptText(
 
 async function mirrorTelegramAssistantReplyToTranscript(params: {
   cfg: OpenClawConfig;
+  dispatchStartedAt: number;
   route: TelegramMessageContext["route"];
   sessionKey: string;
   loadFreshSessionStore: FreshTelegramSessionStoreLoader;
@@ -344,6 +345,11 @@ async function mirrorTelegramAssistantReplyToTranscript(params: {
     agentId: params.route.agentId,
     sessionsDir: path.dirname(storePath),
   });
+  // Only the current-turn tail may suppress this mirror; crossing a user line
+  // would drop legitimate repeated answers.
+  if (await isCurrentTurnTelegramMirrorDuplicate(sessionFile, text, params.dispatchStartedAt)) {
+    return;
+  }
   const message = {
     role: "assistant" as const,
     content: [{ type: "text" as const, text }],
@@ -397,6 +403,23 @@ async function mirrorTelegramAssistantReplyToTranscript(params: {
   });
 }
 
+async function isCurrentTurnTelegramMirrorDuplicate(
+  sessionFile: string,
+  text: string,
+  dispatchStartedAt: number,
+): Promise<boolean> {
+  const latest = await readLatestAssistantTextFromSessionTranscript(sessionFile);
+  return (
+    latest?.timestamp !== undefined &&
+    latest.timestamp >= dispatchStartedAt &&
+    normalizeTelegramMirrorText(latest.text) === normalizeTelegramMirrorText(text)
+  );
+}
+
+function normalizeTelegramMirrorText(text: string): string {
+  return text.trim().replace(/\s+/g, " ");
+}
+
 const MAX_PROGRESS_MARKDOWN_TEXT_CHARS = 300;
 const TELEGRAM_GENERAL_TOPIC_ID = 1;
 
@@ -411,18 +434,6 @@ function sanitizeProgressMarkdownText(text: string): string {
   return text.replaceAll("`", "'");
 }
 
-function formatProgressAsMarkdownCode(text: string): string {
-  const clipped = clipProgressMarkdownText(text);
-  return `\`${sanitizeProgressMarkdownText(clipped)}\``;
-}
-
-function formatTelegramProgressLine(text: string): string {
-  const trimmed = text.trim();
-  return trimmed.startsWith("_") && trimmed.endsWith("_")
-    ? trimmed
-    : formatProgressAsMarkdownCode(text);
-}
-
 function escapeTelegramProgressHtml(text: string): string {
   return text
     .replaceAll("&", "&amp;")
@@ -431,21 +442,39 @@ function escapeTelegramProgressHtml(text: string): string {
     .replaceAll('"', "&quot;");
 }
 
-function renderTelegramProgressStringLine(text: string): string {
-  const clipped = clipProgressMarkdownText(text.trim());
+function normalizeTelegramProgressText(text: string, options?: { trim?: boolean }): string {
+  const source = options?.trim === false ? text : text.trim();
+  const clipped = clipProgressMarkdownText(source);
   const italic = clipped.match(/^_(.*)_$/u);
   if (italic) {
-    return `<i>${escapeTelegramProgressHtml(italic[1] ?? "")}</i>`;
+    return italic[1] ?? "";
   }
-  return `<code>${escapeTelegramProgressHtml(clipped)}</code>`;
+  return clipped;
 }
 
-function renderTelegramProgressLine(line: ChannelProgressDraftCompositorLine): string {
+function formatTelegramProgressLine(text: string): string {
+  return sanitizeProgressMarkdownText(normalizeTelegramProgressText(text, { trim: false }));
+}
+
+function renderTelegramProgressHtmlStringLine(text: string): string {
+  const normalized = normalizeTelegramProgressText(text);
+  const italic = text.trim().match(/^_(.*)_$/u);
+  if (italic) {
+    return `<i>${escapeTelegramProgressHtml(normalized)}</i>`;
+  }
+  return `<code>${escapeTelegramProgressHtml(normalized)}</code>`;
+}
+
+function renderTelegramProgressHtmlLine(line: ChannelProgressDraftCompositorLine): string {
   if (typeof line === "string") {
-    return line.split(/\r?\n/u).map(renderTelegramProgressStringLine).filter(Boolean).join("<br>");
+    return line
+      .split(/\r?\n/u)
+      .map(renderTelegramProgressHtmlStringLine)
+      .filter(Boolean)
+      .join("\n");
   }
   if (!line.icon && line.label === "Commentary") {
-    return renderTelegramProgressStringLine(line.text);
+    return renderTelegramProgressHtmlStringLine(line.text);
   }
   const label = [line.icon, line.label].filter(Boolean).join(" ");
   const parts = [`<b>${escapeTelegramProgressHtml(label)}</b>`];
@@ -455,7 +484,7 @@ function renderTelegramProgressLine(line: ChannelProgressDraftCompositorLine): s
   } else {
     const text = line.text.trim();
     if (text && text !== label) {
-      parts.push(renderTelegramProgressStringLine(text));
+      parts.push(renderTelegramProgressHtmlStringLine(text));
     }
   }
   if (line.status && line.status !== "completed" && line.status !== line.detail) {
@@ -467,16 +496,22 @@ function renderTelegramProgressLine(line: ChannelProgressDraftCompositorLine): s
 function renderTelegramProgressDraftPreview(
   text: string,
   lines: readonly ChannelProgressDraftCompositorLine[],
+  label: string | undefined,
 ): TelegramDraftPreview {
   const trimmed = text.trimEnd();
-  const [heading] = trimmed.split(/\r?\n/u, 1);
-  const renderedLines = lines.map(renderTelegramProgressLine).filter(Boolean);
-  const htmlParts = heading?.trim()
-    ? [`<b>${escapeTelegramProgressHtml(heading.trim())}</b>`, ...renderedLines]
-    : renderedLines;
+  const textLines = trimmed.split(/\r?\n/u);
+  const labelVisible =
+    label !== undefined && (trimmed === label || (textLines[0] === label && textLines[1] === ""));
+  const bodyLines = labelVisible ? textLines.slice(textLines[1] === "" ? 2 : 1) : textLines;
+  const renderedLines = lines.map(renderTelegramProgressHtmlLine).filter(Boolean);
+  const visibleLines = renderedLines.slice(-bodyLines.filter(Boolean).length);
+  const htmlParts = labelVisible
+    ? [`<b>${escapeTelegramProgressHtml(label)}</b>`, ...visibleLines]
+    : visibleLines;
+  const html = htmlParts.join("\n");
   return {
     text: trimmed,
-    richMessage: buildTelegramRichHtml(htmlParts.join("<br>"), { skipEntityDetection: true }),
+    richMessage: buildTelegramRichHtml(html, { skipEntityDetection: true }),
   };
 }
 
@@ -1075,7 +1110,11 @@ export const dispatchTelegramMessage = async ({
       answerLane.hasStreamedMessage = true;
       answerLane.finalized = false;
       answerLane.stream?.updatePreview(
-        renderTelegramProgressDraftPreview(streamText, options?.lines ?? []),
+        renderTelegramProgressDraftPreview(
+          streamText,
+          options?.lines ?? [],
+          resolveChannelProgressDraftLabel({ entry: telegramCfg, seed: progressSeed }),
+        ),
       );
       if (options?.flush) {
         await answerLane.stream?.flush();
@@ -1530,6 +1569,7 @@ export const dispatchTelegramMessage = async ({
       ? async (payload: TelegramTranscriptMirrorPayload) => {
           await mirrorTelegramAssistantReplyToTranscript({
             cfg,
+            dispatchStartedAt,
             route,
             sessionKey,
             loadFreshSessionStore,
@@ -2110,8 +2150,6 @@ export const dispatchTelegramMessage = async ({
                       }
                       if (segment.lane === "answer" && info.kind === "tool") {
                         if (verboseProgressActive()) {
-                          // Durable lane owns tool payloads: send standalone instead
-                          // of diverting into the draft, which is discarded at final.
                           if (
                             await sendPayload(
                               applyTextToPayload(effectivePayload, segment.update.text),
@@ -2122,10 +2160,6 @@ export const dispatchTelegramMessage = async ({
                           continue;
                         }
                         if (streamMode === "progress" && answerLane.stream) {
-                          // Progress-mode streams render tool status in the
-                          // live draft. Do not also emit text-only tool output
-                          // as answer text, or simple commands duplicate and
-                          // restart the progress draft.
                           continue;
                         }
                         await prepareAnswerLaneForToolProgress();

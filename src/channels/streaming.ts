@@ -372,6 +372,8 @@ function itemKindToToolName(kind: string | undefined): string | undefined {
       return "apply_patch";
     case "search":
       return "web_search";
+    case "api":
+      return "api";
     case "tool":
       return "tool_call";
     default:
@@ -409,6 +411,15 @@ function resolveProgressDraftLineId(
 function resolveCommandProgressCorrelationKey(input: { toolCallId?: string }): string | undefined {
   const toolCallId = input.toolCallId?.trim();
   return toolCallId ? `command:${toolCallId}` : undefined;
+}
+
+function isTerminalProgressStatus(status: string | undefined): boolean {
+  const normalized = normalizeOptionalLowercaseString(status);
+  return (
+    normalized === "completed" ||
+    normalized === "failed" ||
+    normalized?.startsWith("exit ") === true
+  );
 }
 
 function isEmptyReasoningProgressItem(
@@ -1149,7 +1160,11 @@ function mergeProgressDraftLineUpdate<TLine extends string | ChannelProgressDraf
     return line;
   }
   const previousDetail = previous.detail?.trim();
-  if (!previousDetail || previousDetail === previous.status) {
+  if (
+    !previousDetail ||
+    previousDetail === previous.status ||
+    isTerminalProgressStatus(previous.status)
+  ) {
     return line;
   }
   const replacement = {
