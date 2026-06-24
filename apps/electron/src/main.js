@@ -83,16 +83,29 @@ function resolveOpenClawEntry() {
 }
 
 function resolveTrayIcon() {
-  // In packaged apps, the file is unpacked alongside app.asar
-  const candidates = [
-    path.join(__dirname, "..", "assets", "tray-icon.png"),
-    // asarUnpack path: alongside app.asar
-    path.join(__dirname.replace(".asar", ""), "..", "assets", "tray-icon.png"),
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
+  // Prefer openclaw-tray.png, fall back to tray-icon.png
+  const baseNames = ["openclaw-tray.png", "tray-icon.png"];
+  for (const name of baseNames) {
+    const candidates = [
+      path.join(__dirname, "..", "assets", name),
+      // asarUnpack path: alongside app.asar
+      path.join(__dirname.replace(".asar", ""), "..", "assets", name),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return p;
+    }
   }
   return undefined;
+}
+
+function createScaledTrayIcon(iconPath) {
+  const img = nativeImage.createFromPath(iconPath);
+  // macOS menu bar expects ~22px height; 128x128 source → resize for clarity
+  const size = img.getSize();
+  if (size.width > 32 || size.height > 32) {
+    return img.resize({ width: 20, height: 20, quality: "better" });
+  }
+  return img;
 }
 
 // ============================================================================
@@ -583,7 +596,7 @@ function createMainWindow() {
 function createTray() {
   const iconPath = resolveTrayIcon();
   if (!iconPath) return;
-  const icon = nativeImage.createFromPath(iconPath);
+  const icon = createScaledTrayIcon(iconPath);
   // Template image: macOS auto-inverts for light/dark menu bar
   icon.setTemplateImage(true);
   appIcon = new Tray(icon);
