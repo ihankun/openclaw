@@ -259,6 +259,67 @@ function loadingPageURL() {
 }
 
 // ============================================================================
+// Windows Title Bar Buttons (injected as JS into the renderer page)
+// ============================================================================
+
+const WIN_TITLE_BAR_JS = `
+(function() {
+  if (document.getElementById('win-title-bar')) return;
+
+  var btnHtml = {
+    minimize: '<svg viewBox="0 0 12 12"><path d="M2 6h8" stroke="currentColor" stroke-width="1" fill="none"/></svg>',
+    maximize: '<svg viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+    restore: '<svg viewBox="0 0 12 12"><rect x="2" y="0.5" width="7.5" height="7.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="0.8"/><rect x="0.5" y="2" width="7.5" height="7.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="0.8"/></svg>',
+    close: '<svg viewBox="0 0 12 12"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>'
+  };
+
+  var bar = document.createElement('div');
+  bar.id = 'win-title-bar';
+  bar.className = 'win-title-bar';
+
+  var btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;align-items:center;padding-left:12px;-webkit-app-region:no-drag;';
+
+  function updateMaxBtn() {
+    maxBtn.innerHTML = window.__electronMaximized ? btnHtml.restore : btnHtml.maximize;
+  }
+
+  var minBtn = document.createElement('button');
+  minBtn.className = 'win-title-btn minimize';
+  minBtn.innerHTML = btnHtml.minimize;
+  minBtn.addEventListener('click', function() { window.electronAPI.minimizeWindow(); });
+
+  var maxBtn = document.createElement('button');
+  maxBtn.className = 'win-title-btn maximize';
+  maxBtn.innerHTML = btnHtml.maximize;
+  maxBtn.addEventListener('click', function() {
+    window.electronAPI.maximizeWindow().then(function(maximized) {
+      window.__electronMaximized = maximized;
+      updateMaxBtn();
+    });
+  });
+
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'win-title-btn close';
+  closeBtn.innerHTML = btnHtml.close;
+  closeBtn.addEventListener('click', function() { window.electronAPI.closeWindow(); });
+
+  btns.appendChild(minBtn);
+  btns.appendChild(maxBtn);
+  btns.appendChild(closeBtn);
+  bar.appendChild(btns);
+  document.body.appendChild(bar);
+
+  if (window.electronAPI.onMaximizeChange) {
+    window.electronAPI.onMaximizeChange(function(maximized) {
+      window.__electronMaximized = maximized;
+      updateMaxBtn();
+    });
+  }
+})();
+`;
+
+// ============================================================================
 // Node.js Binary
 // ============================================================================
 
@@ -507,11 +568,64 @@ const TITLE_BAR_PADDING_CSS = `
   }
 `;
 
+const WIN_TITLE_BAR_CSS = `
+  /* Full-width drag region on Windows (no native title bar) */
+  .win-title-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 38px;
+    -webkit-app-region: drag;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    pointer-events: auto;
+  }
+  .win-title-btn {
+    width: 46px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-app-region: no-drag;
+    transition: background 0.1s;
+    color: #e0e0e0;
+    font-size: 12px;
+  }
+  .win-title-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .win-title-btn:active {
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .win-title-btn.close:hover {
+    background: #e81123;
+  }
+  .win-title-btn svg {
+    width: 12px;
+    height: 12px;
+  }
+`;
+
 function injectTitleBarPadding(contents) {
   try {
     contents.insertCSS(TITLE_BAR_PADDING_CSS);
   } catch (err) {
     log("Error injecting title bar CSS:", err.message);
+  }
+}
+
+function injectWindowsTitleBar(contents) {
+  if (!isWindows) return;
+  try {
+    contents.insertCSS(WIN_TITLE_BAR_CSS);
+    contents.executeJavaScript(WIN_TITLE_BAR_JS);
+  } catch (err) {
+    log("Error injecting Windows title bar:", err.message);
   }
 }
 
@@ -549,11 +663,24 @@ function createMainWindow() {
     mainWindow.show();
   });
 
+  // Notify renderer when maximize state changes (for Windows title bar buttons)
+  mainWindow.on("maximize", () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("window:maximize-changed", true);
+    }
+  });
+  mainWindow.on("unmaximize", () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("window:maximize-changed", false);
+    }
+  });
+
   // Inject title-bar padding when gateway page loads
   mainWindow.webContents.on("did-navigate", (_event, url) => {
     if (url.includes(GATEWAY_HOST)) {
       injectTitleBarPadding(mainWindow.webContents);
     }
+    injectWindowsTitleBar(mainWindow.webContents);
   });
 
   // Also catch in-page navigations and sub-frames
@@ -562,6 +689,7 @@ function createMainWindow() {
     if (url.includes(GATEWAY_HOST)) {
       injectTitleBarPadding(mainWindow.webContents);
     }
+    injectWindowsTitleBar(mainWindow.webContents);
   });
 
   // Auto-open DevTools on navigation failure (useful for packaged debugging)
@@ -811,6 +939,23 @@ function setupIpcHandlers() {
       applyDockBehavior();
     }
     return result;
+  });
+
+  // Window controls (used on Windows where titleBarStyle: "hidden" removes native buttons)
+  ipcMain.handle("window:minimize", () => {
+    if (mainWindow) mainWindow.minimize();
+  });
+  ipcMain.handle("window:maximize", () => {
+    if (!mainWindow) return false;
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+      return false;
+    }
+    mainWindow.maximize();
+    return true;
+  });
+  ipcMain.handle("window:close", () => {
+    if (mainWindow) mainWindow.close();
   });
 }
 

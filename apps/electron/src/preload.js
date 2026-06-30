@@ -49,6 +49,22 @@ const electronAPI = {
     return () => ipcRenderer.removeListener("gateway:exited", handler);
   },
 
+  /** Minimize the window. */
+  minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
+
+  /** Maximize or restore the window. Returns new maximized state. */
+  maximizeWindow: () => ipcRenderer.invoke("window:maximize"),
+
+  /** Close the window. */
+  closeWindow: () => ipcRenderer.invoke("window:close"),
+
+  /** Listen for maximize state changes. Returns unsubscribe function. */
+  onMaximizeChange: (callback) => {
+    const handler = (_event, maximized) => callback(maximized);
+    ipcRenderer.on("window:maximize-changed", handler);
+    return () => ipcRenderer.removeListener("window:maximize-changed", handler);
+  },
+
   /** Detect if running inside Electron. */
   isElectron: () => true,
 
