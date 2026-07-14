@@ -8,7 +8,7 @@
  * Usage: node scripts/stage-gateway.mjs
  */
 
-import { cpSync, existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, statSync, readdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, statSync, readdirSync, realpathSync } from "node:fs";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,6 +75,23 @@ const pkgPath = path.join(STAGING_DIR, "package.json");
 const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
 delete pkg.devDependencies;
 delete pkg.scripts;
+
+// Resolve workspace protocol references (pnpm-only) for npm compatibility.
+// Local workspace packages are not published to npm, so we drop them from
+// package.json and copy them from root node_modules after npm install.
+const workspaceDropped = [];
+if (pkg.dependencies) {
+  for (const [name, version] of Object.entries(pkg.dependencies)) {
+    if (typeof version === "string" && version.startsWith("workspace:")) {
+      delete pkg.dependencies[name];
+      workspaceDropped.push(name);
+    }
+  }
+}
+if (workspaceDropped.length > 0) {
+  console.log(`  ✓ dropped ${workspaceDropped.length} workspace deps, will copy from root node_modules`);
+}
+
 writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
 
 // ── 3. npm install production deps (produces flat node_modules) ──
@@ -95,11 +112,27 @@ try {
   process.exit(1);
 }
 
-// ── 4. Remove .package-lock.json to save space ──
+// ── 4. Copy dropped workspace packages from root node_modules ──
+const stagingNodeModules = path.join(STAGING_DIR, "node_modules");
+for (const name of workspaceDropped) {
+  const src = path.join(PROJECT_ROOT, "node_modules", name);
+  const dst = path.join(stagingNodeModules, name);
+  if (existsSync(src)) {
+    // Resolve pnpm symlink to real path
+    const realSrc = realpathSync(src);
+    if (existsSync(dst)) rmSync(dst, { recursive: true });
+    cpSync(realSrc, dst, { recursive: true, force: true });
+    console.log(`  ✓ copied workspace package: ${name}`);
+  } else {
+    console.warn(`  ⚠ cannot find workspace package in root node_modules: ${name}`);
+  }
+}
+
+// ── 5. Remove .package-lock.json to save space ──
 const lockFile = path.join(STAGING_DIR, "package-lock.json");
 if (existsSync(lockFile)) rmSync(lockFile);
 
-// ── 5. Summary ──
+// ── 6. Summary ──
 console.log("\n── Summary ──");
 
 // Cross-platform directory size calculation
