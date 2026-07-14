@@ -1,10 +1,7 @@
 // Isolated agent session tests cover session creation and metadata for cron runs.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
-
-vi.mock("../../config/sessions/store-load.js", () => ({
-  loadSessionStore: vi.fn(),
-}));
+import type { SessionEntry } from "../../config/sessions/types.js";
 
 vi.mock("../../config/sessions/paths.js", () => ({
   resolveStorePath: vi.fn().mockReturnValue("/tmp/test-store.json"),
@@ -28,14 +25,12 @@ vi.mock("../../agents/bootstrap-cache.js", () => ({
 
 import { clearBootstrapSnapshot } from "../../agents/bootstrap-cache.js";
 import { evaluateSessionFreshness } from "../../config/sessions/reset-policy.js";
-import { loadSessionStore } from "../../config/sessions/store-load.js";
 import { resolveCronSession } from "./session.js";
 
 const NOW_MS = 1_737_600_000_000;
 
-type SessionStore = ReturnType<typeof loadSessionStore>;
-type SessionStoreEntry = SessionStore[string];
-type MockSessionStoreEntry = Partial<SessionStoreEntry>;
+type SessionStore = Record<string, SessionEntry>;
+type MockSessionStoreEntry = Partial<SessionEntry>;
 
 function resolveWithStoredEntry(params?: {
   sessionKey?: string;
@@ -47,9 +42,8 @@ function resolveWithStoredEntry(params?: {
   const sessionKey = params?.sessionKey ?? "webhook:stable-key";
   const sourceSessionKey = params?.sourceSessionKey;
   const store: SessionStore = params?.entry
-    ? ({ [sourceSessionKey ?? sessionKey]: params.entry as SessionStoreEntry } as SessionStore)
+    ? ({ [sourceSessionKey ?? sessionKey]: params.entry as SessionEntry } as SessionStore)
     : {};
-  vi.mocked(loadSessionStore).mockReturnValue(store);
   vi.mocked(evaluateSessionFreshness).mockReturnValue({ fresh: params?.fresh ?? true });
 
   return resolveCronSession({
@@ -59,6 +53,7 @@ function resolveWithStoredEntry(params?: {
     agentId: "main",
     nowMs: NOW_MS,
     forceNew: params?.forceNew,
+    store,
   });
 }
 
@@ -110,6 +105,30 @@ describe("resolveCronSession", () => {
     expect(result.sessionEntry.providerOverride).toBeUndefined();
     expect(result.sessionEntry.model).toBeUndefined();
     expect(result.isNewSession).toBe(true);
+  });
+
+  it("assigns a collision-proof lifecycle revision to each resolved run", () => {
+    const first = resolveWithStoredEntry({ sessionKey: "agent:main:cron:new-job" });
+    const second = resolveWithStoredEntry({ sessionKey: "agent:main:cron:new-job" });
+
+    expect(first.lifecycleRevision).toBe(first.sessionEntry.lifecycleRevision);
+    expect(second.lifecycleRevision).toBe(second.sessionEntry.lifecycleRevision);
+    expect(first.lifecycleRevision).not.toBe(second.lifecycleRevision);
+  });
+
+  it("rejects archived persistent sessions before rollover", () => {
+    expect(() =>
+      resolveWithStoredEntry({
+        sessionKey: "agent:main:main",
+        entry: {
+          sessionId: "archived-session-id",
+          updatedAt: NOW_MS - 1000,
+          archivedAt: NOW_MS,
+        },
+        forceNew: true,
+      }),
+    ).toThrow('Session "agent:main:main" is archived. Restore it before starting new work.');
+    expect(clearBootstrapSnapshot).not.toHaveBeenCalled();
   });
 
   // New tests for session reuse behavior (#18027)
@@ -179,31 +198,37 @@ describe("resolveCronSession", () => {
       expect(clearBootstrapSnapshot).toHaveBeenCalledWith("webhook:stable-key");
     });
 
-    it("seeds fresh cron run sessions from a source session without rolling that source", () => {
+    it("preserves pin state when rolling to a fresh session", () => {
+      const pinnedAt = NOW_MS - 500;
       const result = resolveWithStoredEntry({
-        sessionKey: "agent:main:cron:daily-repost",
-        sourceSessionKey: "agent:main:telegram:direct:42",
         entry: {
-          sessionId: "live-chat-session",
+          sessionId: "existing-session-id-pinned",
           updatedAt: NOW_MS - 1000,
-          systemSent: true,
-          modelOverride: "sonnet-4",
-          providerOverride: "anthropic",
-          thinkingLevel: "high",
-          sendPolicy: "allow",
+          pinnedAt,
         },
         fresh: true,
         forceNew: true,
       });
 
-      expect(result.sessionEntry.sessionId).not.toBe("live-chat-session");
       expect(result.isNewSession).toBe(true);
-      expect(result.previousSessionId).toBeUndefined();
-      expect(result.sessionEntry.modelOverride).toBe("sonnet-4");
-      expect(result.sessionEntry.providerOverride).toBe("anthropic");
-      expect(result.sessionEntry.thinkingLevel).toBe("high");
-      expect(result.sessionEntry.sendPolicy).toBeUndefined();
-      expect(clearBootstrapSnapshot).not.toHaveBeenCalled();
+      expect(result.sessionEntry.pinnedAt).toBe(pinnedAt);
+    });
+
+    it("drops a standalone runtime override without a retained model selection", () => {
+      const result = resolveWithStoredEntry({
+        entry: {
+          sessionId: "existing-session-id-runtime",
+          updatedAt: NOW_MS - 1000,
+          agentRuntimeOverride: "openclaw",
+          agentHarnessId: "codex",
+        },
+        fresh: true,
+        forceNew: true,
+      });
+
+      expect(result.isNewSession).toBe(true);
+      expect(result.sessionEntry.agentRuntimeOverride).toBeUndefined();
+      expect(result.sessionEntry.agentHarnessId).toBeUndefined();
     });
 
     it("clears stale sessionFile when forceNew rolls to a fresh session", () => {
@@ -240,6 +265,8 @@ describe("resolveCronSession", () => {
             threadId: "1737500000.123456",
           },
           modelOverride: "gpt-5.4",
+          agentRuntimeOverride: "openclaw",
+          agentHarnessId: "codex",
         },
         fresh: true,
         forceNew: true,
@@ -256,6 +283,8 @@ describe("resolveCronSession", () => {
       expect(result.sessionEntry.deliveryContext).toBeUndefined();
       // Per-session overrides must be preserved
       expect(result.sessionEntry.modelOverride).toBe("gpt-5.4");
+      expect(result.sessionEntry.agentRuntimeOverride).toBe("openclaw");
+      expect(result.sessionEntry.agentHarnessId).toBeUndefined();
     });
 
     it("clears stale run-scoped state when forceNew rolls to a fresh session", () => {
@@ -419,6 +448,7 @@ describe("resolveCronSession", () => {
           modelOverride: "claude-sonnet-4-6",
           providerOverride: "anthropic",
           modelOverrideSource: "user",
+          agentRuntimeOverride: "openclaw",
           authProfileOverride: "work-profile",
           authProfileOverrideSource: "user",
           authProfileOverrideCompactionCount: 3,
@@ -431,6 +461,7 @@ describe("resolveCronSession", () => {
       expect(result.sessionEntry.modelOverride).toBe("claude-sonnet-4-6");
       expect(result.sessionEntry.providerOverride).toBe("anthropic");
       expect(result.sessionEntry.modelOverrideSource).toBe("user");
+      expect(result.sessionEntry.agentRuntimeOverride).toBe("openclaw");
       expect(result.sessionEntry.authProfileOverride).toBe("work-profile");
       expect(result.sessionEntry.authProfileOverrideSource).toBe("user");
       expect(result.sessionEntry.authProfileOverrideCompactionCount).toBe(3);

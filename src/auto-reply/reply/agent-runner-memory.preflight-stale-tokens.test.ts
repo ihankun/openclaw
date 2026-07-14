@@ -8,7 +8,7 @@ import {
   clearMemoryPluginState,
   registerMemoryCapability,
   type MemoryFlushPlanResolver,
-} from "../../plugins/memory-state.js";
+} from "../../plugins/memory-state.test-fixtures.js";
 import {
   runPreflightCompactionIfNeeded,
   setAgentRunnerMemoryTestDeps,
@@ -26,10 +26,14 @@ function createReplyOperation(): ReplyOperation {
     resetTriggered: false,
     phase: "queued",
     result: null,
+    startedAtMs: Date.now(),
+    lastActivityAtMs: Date.now(),
+    recordActivity: vi.fn(),
     setPhase: vi.fn(),
     updateSessionId: vi.fn(),
     attachBackend: vi.fn(),
     detachBackend: vi.fn(),
+    freezeAbort: vi.fn(),
     retainFailureUntilComplete: vi.fn(),
     complete: vi.fn(),
     completeThen: vi.fn((afterClear: () => void) => {

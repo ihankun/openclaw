@@ -116,6 +116,35 @@ describe("imessage message actions", () => {
     loggerMock.warn.mockReset();
   });
 
+  it.each([
+    "react",
+    "edit",
+    "unsend",
+    "renameGroup",
+    "setGroupIcon",
+    "addParticipant",
+    "removeParticipant",
+    "leaveGroup",
+  ] as const)("resolves %s chat aliases to the canonical delivery target", (action) => {
+    const aliasSpec = imessageMessageActions.messageActionTargetAliases?.[action];
+
+    expect(aliasSpec?.deliveryTargetAliases).toStrictEqual([
+      "chatGuid",
+      "chatIdentifier",
+      "chatId",
+    ]);
+    if (action === "react") {
+      expect(aliasSpec?.aliases).toContain("messageId");
+    }
+    expect(aliasSpec?.resolveDeliveryTarget?.({ args: { chatGuid: "iMessage;+;chat0000" } })).toBe(
+      "chat_guid:iMessage;+;chat0000",
+    );
+    expect(aliasSpec?.resolveDeliveryTarget?.({ args: { chatIdentifier: "team-thread" } })).toBe(
+      "chat_identifier:team-thread",
+    );
+    expect(aliasSpec?.resolveDeliveryTarget?.({ args: { chatId: 42 } })).toBe("chat_id:42");
+  });
+
   it("does not advertise private API actions when the bridge is known unavailable", () => {
     probeMock.getCachedIMessagePrivateApiStatus.mockReturnValue({
       available: false,
@@ -371,6 +400,51 @@ describe("imessage message actions", () => {
     expect(result).toMatchObject({
       details: { ok: true, messageId: "vote-guid", pollVotedOption: "Blue" },
     });
+  });
+
+  it("defaults the poll reference to the current inbound message id", async () => {
+    probeMock.getCachedIMessagePrivateApiStatus.mockReturnValue({
+      available: true,
+      v2Ready: true,
+      selectors: { pollVoteMessage: true },
+      rpcMethods: ["send", "poll.send", "poll.vote"],
+    });
+    runtimeMock.resolveIMessageMessageId.mockReturnValueOnce("poll-full-guid");
+    runtimeMock.sendPollVote.mockResolvedValue({ messageId: "vote-guid", optionText: "Blue" });
+
+    // No explicit pollId/pollGuid/messageId — the poll is the current inbound
+    // message, so the reference defaults from toolContext.currentMessageId.
+    await imessageMessageActions.handleAction?.({
+      action: "poll-vote",
+      cfg: cfg(),
+      params: { chatGuid: "iMessage;+;chat0000", pollOptionIndex: 2 },
+      toolContext: { currentMessageId: 3 },
+    } as never);
+
+    expect(runtimeMock.resolveIMessageMessageId).toHaveBeenCalledWith(
+      "3",
+      expect.objectContaining({ requireKnownShortId: true }),
+    );
+    expect(runtimeMock.sendPollVote).toHaveBeenCalledWith(
+      expect.objectContaining({ pollGuid: "poll-full-guid", optionIndex: 2 }),
+    );
+  });
+
+  it("rejects a poll vote with no reference and no current inbound message", async () => {
+    probeMock.getCachedIMessagePrivateApiStatus.mockReturnValue({
+      available: true,
+      v2Ready: true,
+      selectors: { pollVoteMessage: true },
+      rpcMethods: ["send", "poll.send", "poll.vote"],
+    });
+    await expect(
+      imessageMessageActions.handleAction?.({
+        action: "poll-vote",
+        cfg: cfg(),
+        params: { chatGuid: "iMessage;+;chat0000", pollOptionIndex: 2 },
+      } as never),
+    ).rejects.toThrow("requires the poll message id");
+    expect(runtimeMock.sendPollVote).not.toHaveBeenCalled();
   });
 
   it("rejects a poll vote with conflicting selectors", async () => {
