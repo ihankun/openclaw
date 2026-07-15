@@ -632,14 +632,17 @@ export interface MacosPortGuardianRecords {
 }
 
 export interface ManagedOutgoingImageRecords {
+  agent_id: string | null;
   alt: string;
   attachment_id: string;
+  cleanup_pending: Generated<number>;
   created_at: string;
   message_id: string | null;
   original_content_type: string;
   original_filename: string | null;
   original_height: number | null;
   original_media_id: string;
+  original_media_root: string;
   original_media_subdir: string;
   original_size_bytes: number | null;
   original_width: number | null;
@@ -850,6 +853,20 @@ export interface SessionStateHeads {
   pruned_max_sequence: Generated<number>;
   session_key: string;
   updated_at: number;
+}
+
+export interface SessionUpstreamLinks {
+  agent_id: string;
+  catalog_id: string;
+  created_at: number;
+  host_id: string;
+  last_marker_json: string | null;
+  last_scanned_at: number | null;
+  session_key: string;
+  thread_id: string;
+  updated_at: number;
+  upstream_kind: string;
+  upstream_ref_json: string | null;
 }
 
 export interface SessionWatchCursors {
@@ -1252,6 +1269,7 @@ export interface DB {
   session_groups: SessionGroups;
   session_state_events: SessionStateEvents;
   session_state_heads: SessionStateHeads;
+  session_upstream_links: SessionUpstreamLinks;
   session_watch_cursors: SessionWatchCursors;
   skill_curator_state: SkillCuratorState;
   skill_lifecycle: SkillLifecycle;

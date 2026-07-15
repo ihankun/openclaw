@@ -13,13 +13,12 @@ import {
 import { HEARTBEAT_SKIP_LANES_BUSY, type HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
 import { enqueueCommandInLane } from "../../process/command-queue.js";
 import { CommandLane } from "../../process/lanes.js";
+import { cancelTaskById, listTaskRecords } from "../../tasks/task-registry.js";
 import {
-  cancelTaskById,
-  listTaskRecords,
   resetTaskRegistryControlRuntimeForTests,
   resetTaskRegistryForTests,
   setTaskRegistryControlRuntimeForTests,
-} from "../../tasks/task-registry.js";
+} from "../../tasks/task-runtime.test-helpers.js";
 import {
   advanceCronActiveJobGeneration,
   clearCronJobActive,
@@ -41,7 +40,6 @@ import {
 import { computeJobNextRunAtMs } from "./jobs.js";
 import { run as runManualCronJob } from "./ops.js";
 import { createCronServiceState, type CronEvent } from "./state.js";
-import { DEFAULT_JOB_TIMEOUT_MS } from "./timeout-policy.js";
 import {
   applyJobResult,
   executeJobCore,
@@ -958,7 +956,7 @@ describe("cron service timer regressions", () => {
       settled = true;
     });
 
-    await vi.advanceTimersByTimeAsync(DEFAULT_JOB_TIMEOUT_MS + 1_000);
+    await vi.advanceTimersByTimeAsync(10 * 60_000 + 1_000);
     await Promise.resolve();
     expect(settled).toBe(false);
 
@@ -3785,3 +3783,4 @@ describe("cron service timer regressions", () => {
     );
   });
 });
+/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
