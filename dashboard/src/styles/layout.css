@@ -31,6 +31,37 @@
   }
 }
 
+/* Electron on Windows renders a web-owned title bar; push the shell below it. */
+html.electron-win,
+html.electron-win body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+html.electron-win body {
+  padding-top: 32px;
+}
+
+html.electron-win openclaw-app {
+  display: block;
+  height: calc(100vh - 32px);
+  overflow: hidden;
+}
+
+html.electron-win .shell {
+  height: calc(100vh - 32px);
+}
+
+@supports (height: 100dvh) {
+  html.electron-win openclaw-app {
+    height: calc(100dvh - 32px);
+  }
+  html.electron-win .shell {
+    height: calc(100dvh - 32px);
+  }
+}
+
 .shell--chat {
   overflow: hidden;
 }

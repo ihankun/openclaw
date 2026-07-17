@@ -68,6 +68,9 @@ const electronAPI = {
   /** Detect if running inside Electron. */
   isElectron: () => true,
 
+  /** Current platform (e.g. "win32", "darwin", "linux"). */
+  platform: () => process.platform,
+
   /** Get the gateway URL. */
   getGatewayUrl: () => "http://127.0.0.1:18789",
 };

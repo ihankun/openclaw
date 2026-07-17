@@ -1,6 +1,7 @@
 // Control UI module implements main behavior.
 import "./styles.css";
 import "./ui/app.ts";
+import { mountElectronWindowBar } from "./ui/electron-window-bar.ts";
 import { inferControlUiPublicAssetPath } from "./ui/public-assets.ts";
 
 type ViteImportMeta = ImportMeta & {
@@ -15,6 +16,8 @@ const isProd = (import.meta as ViteImportMeta).env?.PROD === true;
 const currentControlUiBuildId = OPENCLAW_CONTROL_UI_BUILD_ID || "dev";
 
 syncDocumentPublicAssetLinks();
+
+mountElectronWindowBar();
 
 if (isProd && "serviceWorker" in navigator) {
   const swUrl = new URL(inferControlUiPublicAssetPath("sw.js"), window.location.origin);
