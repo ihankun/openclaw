@@ -143,15 +143,16 @@ function renderPendingDevice(req: PendingDevice, props: NodesProps, paired?: Pai
   const approval = resolvePendingDeviceApprovalState(req, paired);
   const repair = req.isRepair ? ` · ${t("nodes.devices.repair")}` : "";
   const ip = req.remoteIp ? ` · ${req.remoteIp}` : "";
+  const approvalLine = `${renderPendingApprovalNote(approval.kind)} · ${t(
+    "nodes.devices.requestedAgo",
+    { age },
+  )}`;
   return html`
     <div class="list-item">
       <div class="list-main">
         <div class="list-title">${name}</div>
         <div class="list-sub">${req.deviceId}${ip}</div>
-        <div class="muted" style="margin-top: 6px;">
-          ${renderPendingApprovalNote(approval.kind)} ·
-          ${t("nodes.devices.requestedAgo", { age })}${repair}
-        </div>
+        <div class="muted" style="margin-top: 6px;">${approvalLine}${repair}</div>
         <div class="muted" style="margin-top: 6px;">
           ${t("nodes.devices.requested", { access: formatAccessSummary(approval.requested) })}
         </div>

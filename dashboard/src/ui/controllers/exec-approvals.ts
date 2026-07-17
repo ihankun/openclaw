@@ -1,5 +1,5 @@
-import { t } from "../../i18n/index.ts";
 // Control UI controller manages exec approvals gateway state.
+import { t } from "../../i18n/index.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import { cloneConfigObject, removePathValue, setPathValue } from "./config/form-utils.ts";
 

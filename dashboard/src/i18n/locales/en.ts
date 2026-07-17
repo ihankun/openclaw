@@ -248,6 +248,7 @@ export const en: TranslationMap = {
   skillsView: {
     title: "Skills",
     subtitle: "Installed skills and their status.",
+    agent: "Agent",
     tabs: {
       all: "All",
       ready: "Ready",

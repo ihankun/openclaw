@@ -452,7 +452,7 @@ describe("control UI routing", () => {
     expect(app.querySelector(".sidebar-brand__logo")).toBeNull();
 
     expectElement(app, ".sidebar-shell__footer", HTMLElement);
-    expectElement(app, ".sidebar-utility-link", HTMLElement);
+    expect(app.querySelector(".sidebar-utility-link")).toBeNull();
 
     const item = expectElement(app, ".sidebar .nav-item", HTMLElement);
     const header = expectElement(app, ".sidebar-shell__header", HTMLElement);

@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 import { render } from "lit";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { i18n } from "../../i18n/index.ts";
 import { renderNodes, type NodesProps } from "./nodes.ts";
 
 function baseProps(overrides: Partial<NodesProps> = {}): NodesProps {
@@ -75,6 +76,46 @@ function getPendingDeviceDetails(container: Element): string[] {
 }
 
 describe("nodes devices pending rendering", () => {
+  afterEach(async () => {
+    await i18n.setLocale("en");
+  });
+
+  it("localizes the nodes menu chrome in Simplified Chinese", async () => {
+    await i18n.setLocale("zh-CN");
+    const container = renderNodesContainer({
+      nodes: [
+        {
+          nodeId: "node-1",
+          displayName: "Studio Mac",
+          paired: true,
+          connected: true,
+          caps: ["system.run"],
+        },
+      ],
+      devicesList: {
+        pending: [],
+        paired: [
+          {
+            deviceId: "device-1",
+            displayName: "iPhone",
+            roles: ["operator"],
+            scopes: ["operator.read"],
+          },
+        ],
+      },
+    });
+    const text = container.textContent?.replace(/\s+/g, " ").trim() ?? "";
+
+    expect(text).toContain("执行审批");
+    expect(text).toContain("加载执行审批以编辑允许列表。");
+    expect(text).toContain("设备 配对请求和角色令牌。");
+    expect(text).toContain("已配对 iPhone");
+    expect(text).toContain("角色：operator · 权限范围：operator.read");
+    expect(text).toContain("节点 已配对的设备和实时连接。");
+    expect(text).toContain("Studio Mac");
+    expect(text).toContain("已配对 已连接 system.run");
+  });
+
   it("shows requested and approved access for a scope upgrade", () => {
     const container = renderNodesContainer({
       devicesList: {

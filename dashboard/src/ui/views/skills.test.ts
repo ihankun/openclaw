@@ -2,6 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { i18n } from "../../i18n/index.ts";
 import type { AgentsListResult, SkillStatusEntry, SkillStatusReport } from "../types.ts";
 import { renderSkills, type SkillsProps } from "./skills.ts";
 
@@ -112,11 +113,48 @@ function createProps(overrides: Partial<SkillsProps> = {}): SkillsProps {
 }
 
 describe("renderSkills", () => {
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
     while (dialogRestores.length > 0) {
       dialogRestores.pop()?.();
     }
+    await i18n.setLocale("en");
+  });
+
+  it("localizes the skills menu chrome in Simplified Chinese", async () => {
+    await i18n.setLocale("zh-CN");
+    const container = document.createElement("div");
+    document.body.append(container);
+    dialogRestores.push(() => container.remove());
+    const report: SkillStatusReport = {
+      workspaceDir: "/tmp/workspace",
+      managedSkillsDir: "/tmp/skills",
+      skills: [
+        createSkill({
+          source: "openclaw-workspace",
+          description: "User-authored skill description",
+        }),
+      ],
+    };
+
+    render(renderSkills(createProps({ report })), container);
+    await Promise.resolve();
+
+    const text = normalizeText(container);
+    expect(text).toContain("技能 已安装的技能及其状态。");
+    expect(text).toContain("全部1");
+    expect(text).toContain("可用1");
+    expect(text).toContain("需要配置0");
+    expect(text).toContain("工作区技能");
+    expect(text).toContain("从注册表搜索并安装技能");
+    expect(text).toContain("代理 Main（默认）");
+    expect(text).toContain("User-authored skill description");
+    expect(
+      container.querySelector<HTMLInputElement>('input[name="skills-filter"]')?.placeholder,
+    ).toBe("筛选已安装的技能");
+    expect(
+      container.querySelector<HTMLInputElement>('input[name="clawhub-search"]')?.placeholder,
+    ).toBe("搜索 ClawHub 技能…");
   });
 
   it("renders the agent selector and routes agent changes", async () => {
