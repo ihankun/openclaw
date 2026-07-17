@@ -40,8 +40,8 @@ export class ElectronWindowBar extends LitElement {
       z-index: 9999;
       -webkit-app-region: drag;
       user-select: none;
-      background: var(--sidebar-bg, #fff);
-      border-bottom: 1px solid var(--border-color, #e5e5e5);
+      background: transparent;
+      border-bottom: none;
     }
 
     .btn {
