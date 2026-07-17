@@ -1,6 +1,7 @@
 packages:
   - .
   - ui
+  - dashboard
   - packages/*
   - extensions/*
 

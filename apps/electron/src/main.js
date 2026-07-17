@@ -566,6 +566,19 @@ const TITLE_BAR_PADDING_CSS = `
     z-index: 100;
     pointer-events: auto;
   }
+  /* Let the main top bar move the frameless window while its controls remain interactive. */
+  .topbar {
+    -webkit-app-region: drag;
+  }
+  .topbar button,
+  .topbar a,
+  .topbar input,
+  .topbar select,
+  .topbar textarea,
+  .topbar [role="button"],
+  .topbar [contenteditable="true"] {
+    -webkit-app-region: no-drag;
+  }
 `;
 
 const WIN_TITLE_BAR_CSS = `

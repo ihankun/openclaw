@@ -1,17 +1,17 @@
 {
   "name": "openclaw-desktop",
-  "version": "2026.6.10",
+  "version": "2026.6.12",
   "description": "OpenClaw Desktop - Electron wrapper",
   "private": true,
   "main": "src/main.js",
   "scripts": {
     "postinstall": "node scripts/generate-icon.mjs && electron-builder install-app-deps",
-    "dev": "node scripts/generate-icon.mjs && electron src/main.js",
-    "start": "node scripts/generate-icon.mjs && electron src/main.js",
-    "build": "node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build",
-    "build:mac": "node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build --mac",
-    "build:win": "node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build --win",
-    "build:linux": "node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build --linux"
+    "dev": "pnpm --dir ../.. electron:ui:prepare-dev && node scripts/generate-icon.mjs && electron src/main.js",
+    "start": "pnpm --dir ../.. electron:ui:prepare-dev && node scripts/generate-icon.mjs && electron src/main.js",
+    "build": "pnpm --dir ../.. electron:ui:build && node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build",
+    "build:mac": "pnpm --dir ../.. electron:ui:build && node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build --mac",
+    "build:win": "pnpm --dir ../.. electron:ui:build && node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build --win",
+    "build:linux": "pnpm --dir ../.. electron:ui:build && node scripts/generate-icon.mjs && node scripts/stage-gateway.mjs && node scripts/download-node.mjs && electron-builder build --linux"
   },
   "devDependencies": {
     "electron": "^34.0.0",

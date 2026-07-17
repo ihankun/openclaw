@@ -12,6 +12,7 @@ import { cpSync, existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, sta
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { installDashboardControlUi } from "./dashboard-ui.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..", "..");
@@ -46,6 +47,10 @@ for (const item of REQUIRED) {
   cpSync(src, dst, { recursive: true, force: true });
   console.log(`  ✓ ${item}`);
 }
+
+// Electron owns its legacy dashboard bundle; keep the staged Gateway runtime current
+// while replacing only the Control UI assets that it serves.
+installDashboardControlUi(path.join(STAGING_DIR, "dist", "control-ui"));
 
 // Copy workspace templates (needed by gateway for agent workspace init)
 const tmplSrc = path.join(PROJECT_ROOT, TEMPLATES);
