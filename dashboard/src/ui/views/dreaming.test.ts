@@ -2,6 +2,7 @@
 
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
+import { i18n } from "../../i18n/index.ts";
 import {
   renderDreaming,
   setDreamAdvancedWaitingSort,
@@ -325,7 +326,7 @@ describe("dreaming view", () => {
       { label: "Memory Palace", active: false },
     ]);
     expect(compactText(container.querySelector(".dreams-diary__date"))).toBe(
-      "Travel · 1 chats · 1 signals",
+      "Travel · 1 chat · 1 signal",
     );
     const insight = container.querySelector(".dreams-diary__insight-card");
     expect(insight?.querySelector(".dreams-diary__insight-title")?.textContent).toBe(
@@ -541,7 +542,7 @@ describe("dreaming view", () => {
         onOpenConfig,
       }),
     );
-    expect(container.querySelector(".dreams-diary__empty-text")?.textContent).toBe(
+    expect(compactText(container.querySelector(".dreams-diary__empty-text"))).toBe(
       "Memory Wiki is not enabled",
     );
     expect(
@@ -576,6 +577,50 @@ describe("dreaming view", () => {
       "The repository whispered of forgotten endpoints tonight.",
     );
     setDreamSubTab("scene");
+  });
+
+  it("localizes dream diary guidance and controls in Simplified Chinese", async () => {
+    await i18n.setLocale("zh-CN");
+    setDreamSubTab("diary");
+    setDreamDiarySubTab("dreams");
+
+    try {
+      const container = renderInto(buildProps());
+      expect(
+        [...container.querySelectorAll(".dreams-diary__subtab")].map((tab) =>
+          tab.textContent?.trim(),
+        ),
+      ).toEqual(["梦境", "导入洞察", "记忆宫殿"]);
+      expect(compactText(container.querySelector(".dreams-diary__explainer"))).toBe(
+        "这是系统在重放并整合记忆时写入的原始梦境日记，可用于查看记忆系统关注到了什么，以及哪些内容仍显得嘈杂或单薄。",
+      );
+      expect(compactText(container.querySelector(".dreams-diary__header > .btn"))).toBe("重新加载");
+
+      setDreamDiarySubTab("insights");
+      const insightsContainer = renderInto(buildProps());
+      expect(compactText(insightsContainer.querySelector(".dreams-diary__date"))).toBe(
+        "Travel · 1 个聊天 · 1 个信号",
+      );
+      expect(compactText(insightsContainer.querySelector(".dreams-diary__insight-badge"))).toBe(
+        "低风险",
+      );
+      expect(
+        compactText(insightsContainer.querySelector(".dreams-diary__insight-list strong")),
+      ).toBe("可能有用的信号");
+
+      setDreamDiarySubTab("palace");
+      const palaceContainer = renderInto(buildProps());
+      expect(compactText(palaceContainer.querySelector(".dreams-diary__date"))).toBe(
+        "记忆库 · 2 个页面 · 2 条论断 · 1 个待解决问题 · 1 个矛盾",
+      );
+      expect(compactText(palaceContainer.querySelector(".dreams-diary__insight-list strong"))).toBe(
+        "论断",
+      );
+    } finally {
+      setDreamDiarySubTab("dreams");
+      setDreamSubTab("scene");
+      await i18n.setLocale("en");
+    }
   });
 
   it("renders dream diary markdown through the sanitized markdown pipeline", () => {

@@ -1,5 +1,6 @@
 // Control UI view renders skills shared screen content.
 import { html, nothing } from "lit";
+import { t } from "../../i18n/index.ts";
 import type { SkillStatusEntry } from "../types.ts";
 
 export function computeSkillMissing(skill: SkillStatusEntry): string[] {
@@ -39,11 +40,15 @@ export function renderSkillStatusChips(params: {
   return html`
     <div class="chip-row" style="margin-top: 6px;">
       <span class="chip">${skill.source}</span>
-      ${showBundledBadge ? html` <span class="chip">bundled</span> ` : nothing}
+      ${showBundledBadge
+        ? html` <span class="chip">${t("skillsView.status.bundled")}</span> `
+        : nothing}
       <span class="chip ${available ? "chip-ok" : "chip-warn"}">
-        ${available ? "eligible" : "blocked"}
+        ${available ? t("skillsView.status.eligible") : t("skillsView.status.blocked")}
       </span>
-      ${skill.disabled ? html` <span class="chip chip-warn">disabled</span> ` : nothing}
+      ${skill.disabled
+        ? html` <span class="chip chip-warn">${t("skillsView.status.disabled")}</span> `
+        : nothing}
     </div>
   `;
 }

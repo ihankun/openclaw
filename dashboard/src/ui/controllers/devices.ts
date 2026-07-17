@@ -1,3 +1,4 @@
+import { t } from "../../i18n/index.ts";
 // Control UI controller manages devices gateway state.
 import { clearDeviceAuthToken, storeDeviceAuthToken } from "../device-auth.ts";
 import { loadOrCreateDeviceIdentity } from "../device-identity.ts";
@@ -95,7 +96,7 @@ export async function rejectDevicePairing(state: DevicesState, requestId: string
   if (!state.client || !state.connected) {
     return;
   }
-  const confirmed = window.confirm("Reject this device pairing request?");
+  const confirmed = window.confirm(t("nodes.devices.rejectConfirmation"));
   if (!confirmed) {
     return;
   }
@@ -132,7 +133,7 @@ export async function rotateDeviceToken(
           scopes: res.scopes ?? params.scopes ?? [],
         });
       }
-      window.prompt("New device token (copy and store securely):", res.token);
+      window.prompt(t("nodes.devices.newTokenPrompt"), res.token);
     }
     await loadDevices(state);
   } catch (err) {
@@ -147,7 +148,12 @@ export async function revokeDeviceToken(
   if (!state.client || !state.connected) {
     return;
   }
-  const confirmed = window.confirm(`Revoke token for ${params.deviceId} (${params.role})?`);
+  const confirmed = window.confirm(
+    t("nodes.devices.revokeConfirmation", {
+      deviceId: params.deviceId,
+      role: params.role,
+    }),
+  );
   if (!confirmed) {
     return;
   }

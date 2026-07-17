@@ -1493,7 +1493,7 @@ export function renderApp(state: AppViewState) {
     const content =
       typeof payload?.content === "string" && payload.content.length > 0
         ? payload.content
-        : "No wiki content available.";
+        : t("dreaming.diary.preview.noContent");
     const updatedAt =
       typeof payload?.updatedAt === "string" && payload.updatedAt.trim()
         ? payload.updatedAt.trim()

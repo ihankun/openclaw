@@ -102,13 +102,13 @@ export type SkillsProps = {
   onClawHubInstall: (slug: string, acknowledgeClawHubRisk?: boolean, version?: string) => void;
 };
 
-type StatusTabDef = { id: SkillsStatusFilter; label: string };
+type StatusTabDef = { id: SkillsStatusFilter; labelKey: string };
 
 const STATUS_TABS: StatusTabDef[] = [
-  { id: "all", label: "All" },
-  { id: "ready", label: "Ready" },
-  { id: "needs-setup", label: "Needs Setup" },
-  { id: "disabled", label: "Disabled" },
+  { id: "all", labelKey: "skillsView.tabs.all" },
+  { id: "ready", labelKey: "skillsView.tabs.ready" },
+  { id: "needs-setup", labelKey: "skillsView.tabs.needsSetup" },
+  { id: "disabled", labelKey: "skillsView.tabs.disabled" },
 ];
 
 function skillMatchesStatus(skill: SkillStatusEntry, status: SkillsStatusFilter): boolean {
@@ -150,22 +150,22 @@ function verdictForSkill(skill: SkillStatusEntry, verdicts: SkillsProps["clawhub
 
 function verdictLabel(verdict: ClawHubSkillSecurityVerdict | null | undefined): string {
   if (!verdict) {
-    return "Unavailable";
+    return t("skillsView.verdict.unavailable");
   }
   const status = verdict.securityStatus?.trim() || null;
   if (verdict.ok && verdict.decision === "pass") {
-    return status === "clean" || !status ? "Clean" : status;
+    return status === "clean" || !status ? t("skillsView.verdict.clean") : status;
   }
   if (status === "pending" || status === "not-run") {
-    return "Pending";
+    return t("skillsView.verdict.pending");
   }
   if (status === "malicious") {
-    return "Blocked";
+    return t("skillsView.verdict.blocked");
   }
   if (status === "suspicious") {
-    return "Review";
+    return t("skillsView.verdict.review");
   }
-  return "Unavailable";
+  return t("skillsView.verdict.unavailable");
 }
 
 function verdictChipClass(verdict: ClawHubSkillSecurityVerdict | null | undefined): string {
@@ -183,7 +183,37 @@ type SkillsAgentOption = AgentsListResult["agents"][number];
 
 function agentOptionLabel(agent: SkillsAgentOption, defaultId: string | undefined): string {
   const baseName = agent.identity?.name?.trim() || agent.name?.trim() || agent.id;
-  return agent.id === defaultId ? `${baseName} (default)` : baseName;
+  return agent.id === defaultId ? t("skillsView.defaultAgent", { name: baseName }) : baseName;
+}
+
+function skillGroupLabel(groupId: string): string {
+  switch (groupId) {
+    case "workspace":
+      return t("skillsView.groups.workspace");
+    case "built-in":
+      return t("skillsView.groups.builtIn");
+    case "installed":
+      return t("skillsView.groups.installed");
+    case "extra":
+      return t("skillsView.groups.extra");
+    case "other":
+      return t("skillsView.groups.other");
+    default:
+      return groupId;
+  }
+}
+
+function skillReasonLabel(reason: string): string {
+  switch (reason) {
+    case "disabled":
+      return t("skillsView.reasons.disabled");
+    case "blocked by allowlist":
+      return t("skillsView.reasons.blockedByAllowlist");
+    case "blocked by agent filter":
+      return t("skillsView.reasons.blockedByAgentFilter");
+    default:
+      return reason;
+  }
 }
 
 export function renderSkills(props: SkillsProps) {
@@ -231,8 +261,8 @@ export function renderSkills(props: SkillsProps) {
     <section class="card">
       <div class="row" style="justify-content: space-between;">
         <div>
-          <div class="card-title">Skills</div>
-          <div class="card-sub">Installed skills and their status.</div>
+          <div class="card-title">${t("skillsView.title")}</div>
+          <div class="card-sub">${t("skillsView.subtitle")}</div>
         </div>
         <button
           class="btn"
@@ -250,7 +280,7 @@ export function renderSkills(props: SkillsProps) {
               class="agent-tab ${props.statusFilter === tab.id ? "active" : ""}"
               @click=${() => props.onStatusFilterChange(tab.id)}
             >
-              ${tab.label}<span class="agent-tab-count">${statusCounts[tab.id]}</span>
+              ${t(tab.labelKey)}<span class="agent-tab-count">${statusCounts[tab.id]}</span>
             </button>
           `,
         )}
@@ -286,20 +316,18 @@ export function renderSkills(props: SkillsProps) {
           <input
             .value=${props.filter}
             @input=${(e: Event) => props.onFilterChange((e.target as HTMLInputElement).value)}
-            placeholder="Filter installed skills"
+            placeholder=${t("skillsView.filterPlaceholder")}
             autocomplete="off"
             name="skills-filter"
           />
         </label>
-        <div class="muted">${filtered.length} shown</div>
+        <div class="muted">${t("skillsView.shown", { count: String(filtered.length) })}</div>
       </div>
 
       <div style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;">
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
           <div style="font-weight: 600;">ClawHub</div>
-          <div class="muted" style="font-size: 13px;">
-            Search and install skills from the registry
-          </div>
+          <div class="muted" style="font-size: 13px;">${t("skillsView.clawhub.description")}</div>
         </div>
         <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
           <label class="field" style="flex: 1; min-width: 180px;">
@@ -307,12 +335,14 @@ export function renderSkills(props: SkillsProps) {
               .value=${props.clawhubQuery}
               @input=${(e: Event) =>
                 props.onClawHubQueryChange((e.target as HTMLInputElement).value)}
-              placeholder="Search ClawHub skills…"
+              placeholder=${t("skillsView.clawhub.searchPlaceholder")}
               autocomplete="off"
               name="clawhub-search"
             />
           </label>
-          ${props.clawhubSearchLoading ? html`<span class="muted">Searching…</span>` : nothing}
+          ${props.clawhubSearchLoading
+            ? html`<span class="muted">${t("skillsView.clawhub.searching")}</span>`
+            : nothing}
         </div>
         ${props.clawhubSearchError
           ? html`<div class="callout danger" style="margin-top: 8px;">
@@ -344,7 +374,7 @@ export function renderSkills(props: SkillsProps) {
                       )}
                   >
                     ${props.clawhubInstallMessage.acknowledgeLabel ??
-                    "Acknowledge risk and install"}
+                    t("skillsView.clawhub.acknowledgeRisk")}
                   </button>`
                 : nothing}
             </div>`
@@ -359,8 +389,8 @@ export function renderSkills(props: SkillsProps) {
         ? html`
             <div class="muted" style="margin-top: 16px">
               ${!props.connected && !props.report
-                ? "Not connected to gateway."
-                : "No skills found."}
+                ? t("skillsView.empty.disconnected")
+                : t("skillsView.empty.noSkills")}
             </div>
           `
         : html`
@@ -369,7 +399,7 @@ export function renderSkills(props: SkillsProps) {
                 return html`
                   <details class="agent-skills-group" open>
                     <summary class="agent-skills-header">
-                      <span>${group.label}</span>
+                      <span>${skillGroupLabel(group.id)}</span>
                       <span class="muted">${group.skills.length}</span>
                     </summary>
                     <div class="list skills-grid">
@@ -397,7 +427,9 @@ function renderClawHubResults(props: SkillsProps) {
     return nothing;
   }
   if (results.length === 0) {
-    return html`<div class="muted" style="margin-top: 8px;">No skills found on ClawHub.</div>`;
+    return html`<div class="muted" style="margin-top: 8px;">
+      ${t("skillsView.clawhub.noResults")}
+    </div>`;
   }
   return html`
     <div class="list" style="margin-top: 8px;">
@@ -423,7 +455,9 @@ function renderClawHubResults(props: SkillsProps) {
                   props.onClawHubInstall(r.slug);
                 }}
               >
-                ${props.clawhubInstallSlug === r.slug ? "Installing\u2026" : "Install"}
+                ${props.clawhubInstallSlug === r.slug
+                  ? t("skillsView.clawhub.installing")
+                  : t("skillsView.clawhub.install")}
               </button>
             </div>
           </div>
@@ -459,7 +493,7 @@ function renderClawHubDetailDialog(props: SkillsProps) {
               (e.currentTarget as HTMLElement).closest("dialog")?.close();
             }}
           >
-            Close
+            ${t("skillsView.clawhub.close")}
           </button>
         </div>
         <div class="md-preview-dialog__body" style="display: grid; gap: 16px;">
@@ -474,15 +508,16 @@ function renderClawHubDetailDialog(props: SkillsProps) {
                     </div>
                     ${detail.owner?.displayName
                       ? html`<div class="muted" style="font-size: 13px;">
-                          By
-                          ${detail.owner.displayName}${detail.owner.handle
-                            ? html` (@${detail.owner.handle})`
-                            : nothing}
+                          ${t("skillsView.clawhub.by", {
+                            name: detail.owner.displayName,
+                          })}${detail.owner.handle ? html` (@${detail.owner.handle})` : nothing}
                         </div>`
                       : nothing}
                     ${detail.latestVersion
                       ? html`<div class="muted" style="font-size: 13px;">
-                          Latest: v${detail.latestVersion.version}
+                          ${t("skillsView.clawhub.latest", {
+                            version: detail.latestVersion.version,
+                          })}
                         </div>`
                       : nothing}
                     ${detail.latestVersion?.changelog
@@ -494,7 +529,9 @@ function renderClawHubDetailDialog(props: SkillsProps) {
                       : nothing}
                     ${detail.metadata?.os
                       ? html`<div class="muted" style="font-size: 12px;">
-                          Platforms: ${detail.metadata.os.join(", ")}
+                          ${t("skillsView.clawhub.platforms", {
+                            platforms: detail.metadata.os.join(", "),
+                          })}
                         </div>`
                       : nothing}
                     <button
@@ -507,11 +544,13 @@ function renderClawHubDetailDialog(props: SkillsProps) {
                       }}
                     >
                       ${props.clawhubInstallSlug === props.clawhubDetailSlug
-                        ? "Installing\u2026"
-                        : `Install ${detail.skill.displayName}`}
+                        ? t("skillsView.clawhub.installing")
+                        : t("skillsView.clawhub.installNamed", {
+                            name: detail.skill.displayName,
+                          })}
                     </button>
                   `
-                : html`<div class="muted">Skill not found.</div>`}
+                : html`<div class="muted">${t("skillsView.clawhub.notFound")}</div>`}
         </div>
       </div>
     </dialog>
@@ -540,7 +579,7 @@ function renderSkill(skill: SkillStatusEntry, props: SkillsProps) {
         ${skill.clawhub?.status === "linked"
           ? html`<span class="chip ${verdictChipClass(verdict)}">${verdictLabel(verdict)}</span>`
           : skill.clawhub?.status === "invalid"
-            ? html`<span class="chip chip-warn">ClawHub link invalid</span>`
+            ? html`<span class="chip chip-warn">${t("skillsView.clawhub.linkInvalid")}</span>`
             : nothing}
         <label class="skill-toggle-wrap" @click=${(e: Event) => e.stopPropagation()}>
           <input
@@ -599,7 +638,7 @@ function renderSkillDetail(skill: SkillStatusEntry, props: SkillsProps) {
               (e.currentTarget as HTMLElement).closest("dialog")?.close();
             }}
           >
-            Close
+            ${t("skillsView.detail.close")}
           </button>
         </div>
         <div class="md-preview-dialog__body" style="display: grid; gap: 16px;">
@@ -617,14 +656,14 @@ function renderSkillDetail(skill: SkillStatusEntry, props: SkillsProps) {
                     class="agent-tab ${detailTab === "overview" ? "active" : ""}"
                     @click=${() => props.onDetailTabChange("overview")}
                   >
-                    Overview
+                    ${t("skillsView.detail.overview")}
                   </button>
                   ${skill.skillCard?.present
                     ? html`<button
                         class="agent-tab ${detailTab === "card" ? "active" : ""}"
                         @click=${() => props.onDetailTabChange("card")}
                       >
-                        Skill Card
+                        ${t("skillsView.detail.skillCard")}
                       </button>`
                     : nothing}
                 </div>
@@ -639,14 +678,20 @@ function renderSkillDetail(skill: SkillStatusEntry, props: SkillsProps) {
                   class="callout"
                   style="border-color: var(--warn-subtle); background: var(--warn-subtle); color: var(--warn);"
                 >
-                  <div style="font-weight: 600; margin-bottom: 4px;">Missing requirements</div>
+                  <div style="font-weight: 600; margin-bottom: 4px;">
+                    ${t("skillsView.detail.missingRequirements")}
+                  </div>
                   <div>${missing.join(", ")}</div>
                 </div>
               `
             : nothing}
           ${reasons.length > 0
             ? html`
-                <div class="muted" style="font-size: 13px;">Reason: ${reasons.join(", ")}</div>
+                <div class="muted" style="font-size: 13px;">
+                  ${t("skillsView.detail.reason", {
+                    reasons: reasons.map(skillReasonLabel).join(", "),
+                  })}
+                </div>
               `
             : nothing}
 
@@ -661,7 +706,7 @@ function renderSkillDetail(skill: SkillStatusEntry, props: SkillsProps) {
               />
             </label>
             <span style="font-size: 13px; font-weight: 500;">
-              ${skill.disabled ? "Disabled" : "Enabled"}
+              ${skill.disabled ? t("common.disabled") : t("common.enabled")}
             </span>
             ${canInstall
               ? html`<button
@@ -669,7 +714,7 @@ function renderSkillDetail(skill: SkillStatusEntry, props: SkillsProps) {
                   ?disabled=${busy}
                   @click=${() => props.onInstall(skill.skillKey, skill.name, skill.install[0].id)}
                 >
-                  ${busy ? "Installing\u2026" : skill.install[0].label}
+                  ${busy ? t("skillsView.clawhub.installing") : skill.install[0].label}
                 </button>`
               : nothing}
           </div>
@@ -684,7 +729,7 @@ function renderSkillDetail(skill: SkillStatusEntry, props: SkillsProps) {
                 <div style="display: grid; gap: 8px;">
                   <div class="field">
                     <span
-                      >API key
+                      >${t("skillsView.detail.apiKey")}
                       <span class="muted" style="font-weight: normal; font-size: 0.88em;"
                         >(${skill.primaryEnv})</span
                       ></span
@@ -700,7 +745,7 @@ function renderSkillDetail(skill: SkillStatusEntry, props: SkillsProps) {
                     const href = safeExternalHref(skill.homepage);
                     return href
                       ? html`<div class="muted" style="font-size: 13px;">
-                          Get your key:
+                          ${t("skillsView.detail.getKey")}
                           <a href="${href}" target="_blank" rel="noopener noreferrer"
                             >${skill.homepage}</a
                           >
@@ -712,7 +757,7 @@ function renderSkillDetail(skill: SkillStatusEntry, props: SkillsProps) {
                     ?disabled=${busy}
                     @click=${() => props.onSaveKey(skill.skillKey)}
                   >
-                    Save key
+                    ${t("skillsView.detail.saveKey")}
                   </button>
                 </div>
               `
@@ -721,7 +766,10 @@ function renderSkillDetail(skill: SkillStatusEntry, props: SkillsProps) {
           <div
             style="border-top: 1px solid var(--border); padding-top: 12px; display: grid; gap: 6px; font-size: 12px; color: var(--muted);"
           >
-            <div><span style="font-weight: 600;">Source:</span> ${skill.source}</div>
+            <div>
+              <span style="font-weight: 600;">${t("skillsView.detail.source")}</span>
+              ${skill.source}
+            </div>
             <div style="font-family: var(--mono); word-break: break-all;">${skill.filePath}</div>
             ${(() => {
               const safeHref = safeExternalHref(skill.homepage);
@@ -751,7 +799,9 @@ function renderInstalledClawHubOverview(
   }
   if (link.status === "invalid") {
     return html`<div class="callout danger">
-      <div style="font-weight: 600; margin-bottom: 4px;">ClawHub link invalid</div>
+      <div style="font-weight: 600; margin-bottom: 4px;">
+        ${t("skillsView.clawhub.linkInvalid")}
+      </div>
       <div>${link.reason}</div>
     </div>`;
   }
@@ -765,7 +815,9 @@ function renderInstalledClawHubOverview(
       <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
         <span class="chip ${verdictChipClass(verdict)}">${verdictLabel(verdict)}</span>
         <span class="muted" style="font-size: 12px;">${link.slug}@${link.installedVersion}</span>
-        ${props.clawhubVerdictsLoading ? html`<span class="muted">Refreshing…</span>` : nothing}
+        ${props.clawhubVerdictsLoading
+          ? html`<span class="muted">${t("skillsView.clawhub.refreshing")}</span>`
+          : nothing}
       </div>
       ${props.clawhubVerdictsError
         ? html`<div class="muted" style="font-size: 13px;">${props.clawhubVerdictsError}</div>`
@@ -775,7 +827,7 @@ function renderInstalledClawHubOverview(
       ${auditHref
         ? html`<div style="font-size: 13px;">
             <a href="${auditHref}" target="_blank" rel="noopener noreferrer"
-              >Full security report</a
+              >${t("skillsView.clawhub.fullSecurityReport")}</a
             >
           </div>`
         : nothing}
@@ -796,8 +848,8 @@ function renderInstalledSkillCard(skill: SkillStatusEntry, props: SkillsProps) {
     }
     return html`<div class="muted" style="font-size: 13px;">
       ${props.skillCardLoadingKey === skill.skillKey
-        ? "Loading Skill Card..."
-        : "Skill Card not loaded."}
+        ? t("skillsView.detail.loadingCard")
+        : t("skillsView.detail.cardNotLoaded")}
     </div>`;
   }
   return html`

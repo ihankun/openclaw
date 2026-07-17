@@ -3,6 +3,7 @@ import {
   ClawHubTrustErrorCodes,
   readClawHubTrustErrorDetails,
 } from "../../../../packages/gateway-protocol/src/clawhub-trust-error-details.js";
+import { t } from "../../i18n/index.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type {
   AgentsListResult,
@@ -154,10 +155,7 @@ function formatClawHubInstallMessage(message: string, warning?: string): string 
 }
 
 function formatClawHubAcknowledgementMessage(warning?: string): string {
-  return formatClawHubInstallMessage(
-    "Review the ClawHub warning before installing this skill.",
-    warning,
-  );
+  return formatClawHubInstallMessage(t("skillsView.messages.reviewWarning"), warning);
 }
 
 export function clawhubVerdictKey(target: {
@@ -491,7 +489,7 @@ export async function updateSkillEnabled(state: SkillsState, skillKey: string, e
       await client.request("skills.update", { skillKey, enabled });
       return {
         kind: "success",
-        message: enabled ? "Skill enabled" : "Skill disabled",
+        message: enabled ? t("skillsView.messages.enabled") : t("skillsView.messages.disabled"),
       };
     },
     { refreshCurrentScopeOnStaleSuccess: true },
@@ -507,7 +505,7 @@ export async function saveSkillApiKey(state: SkillsState, skillKey: string) {
       await client.request("skills.update", { skillKey, apiKey });
       return {
         kind: "success",
-        message: `API key saved — stored in openclaw.json (skills.entries.${skillKey})`,
+        message: t("skillsView.messages.apiKeySaved", { skillKey }),
       };
     },
     { refreshCurrentScopeOnStaleSuccess: true },
@@ -531,7 +529,7 @@ export async function installSkill(
     });
     return {
       kind: "success",
-      message: result?.message ?? "Installed",
+      message: result?.message ?? t("skillsView.messages.installed"),
     };
   });
 }
@@ -634,7 +632,10 @@ export async function installFromClawHub(
     }
     state.clawhubInstallMessage = {
       kind: "success",
-      text: formatClawHubInstallMessage(result?.message ?? `Installed ${slug}`, result?.warning),
+      text: formatClawHubInstallMessage(
+        result?.message ?? t("skillsView.messages.installedNamed", { name: slug }),
+        result?.warning,
+      ),
     };
   } catch (err) {
     if (isSkillsAgentScopeCurrent(state, agentScope)) {
@@ -648,7 +649,9 @@ export async function installFromClawHub(
           : formatClawHubInstallMessage(getErrorMessage(err), getClawHubTrustWarningFromError(err)),
         ...(needsAcknowledgement ? { acknowledgeSlug: slug } : {}),
         ...(needsAcknowledgement && acknowledgeVersion ? { acknowledgeVersion } : {}),
-        ...(needsAcknowledgement ? { acknowledgeLabel: "Acknowledge risk and install" } : {}),
+        ...(needsAcknowledgement
+          ? { acknowledgeLabel: t("skillsView.clawhub.acknowledgeRisk") }
+          : {}),
       };
     }
   } finally {
