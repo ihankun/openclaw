@@ -7,13 +7,25 @@
  * - The window loads the OpenClaw control UI via http:// once gateway is ready
  * - Closing the window hides to tray; gateway keeps running
  */
-const { app, BrowserWindow, Menu, MenuItem, ipcMain, shell, dialog, Tray, nativeImage } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  MenuItem,
+  ipcMain,
+  shell,
+  dialog,
+  Tray,
+  nativeImage,
+  screen,
+} = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
 const process = require("node:process");
 const os = require("node:os");
+const { TITLE_BAR_PADDING_CSS } = require("./title-bar-css.js");
 
 // ============================================================================
 // Debug Logging (for packaged-mode troubleshooting)
@@ -38,6 +50,7 @@ const DEFAULT_WINDOW_WIDTH = 1400;
 const DEFAULT_WINDOW_HEIGHT = 900;
 const MIN_WINDOW_WIDTH = 800;
 const MIN_WINDOW_HEIGHT = 600;
+const WINDOW_SIZE_SAVE_DELAY_MS = 250;
 const GATEWAY_STARTUP_TIMEOUT_MS = 120_000;
 const GATEWAY_HEALTH_CHECK_INTERVAL_MS = 500;
 const GATEWAY_FORCE_KILL_TIMEOUT_MS = 5_000;
@@ -53,6 +66,10 @@ const ELECTRON_CONFIG_DIR = path.join(os.homedir(), ".openclaw", "electron");
 const ELECTRON_CONFIG_PATH = path.join(ELECTRON_CONFIG_DIR, "config.json");
 const ELECTRON_CONFIG_DEFAULTS = {
   hideDockOnClose: false,
+  windowSize: {
+    width: DEFAULT_WINDOW_WIDTH,
+    height: DEFAULT_WINDOW_HEIGHT,
+  },
 };
 
 let electronConfig = { ...ELECTRON_CONFIG_DEFAULTS };
@@ -66,6 +83,7 @@ let appIcon = null;
 let gatewayStarting = false;
 let gatewayReady = false;
 let needsSetup = false; // Track if initialization is needed
+let windowSizeSaveTimer = null;
 
 // ============================================================================
 // Path Resolution
@@ -141,6 +159,52 @@ function saveElectronConfig(partial) {
     log("Error saving config:", err.message);
     return { success: false, error: err.message };
   }
+}
+
+function initialMainWindowSize() {
+  const workAreaSize = screen.getPrimaryDisplay().workAreaSize;
+  const savedSize = electronConfig.windowSize;
+  const savedWidth = Number.isInteger(savedSize?.width)
+    ? savedSize.width
+    : DEFAULT_WINDOW_WIDTH;
+  const savedHeight = Number.isInteger(savedSize?.height)
+    ? savedSize.height
+    : DEFAULT_WINDOW_HEIGHT;
+
+  return {
+    width: Math.min(
+      Math.max(savedWidth, MIN_WINDOW_WIDTH),
+      Math.max(workAreaSize.width, MIN_WINDOW_WIDTH),
+    ),
+    height: Math.min(
+      Math.max(savedHeight, MIN_WINDOW_HEIGHT),
+      Math.max(workAreaSize.height, MIN_WINDOW_HEIGHT),
+    ),
+  };
+}
+
+function persistMainWindowSize() {
+  if (windowSizeSaveTimer) {
+    clearTimeout(windowSizeSaveTimer);
+    windowSizeSaveTimer = null;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  // Preserve the restored size even when the app quits while maximized,
+  // minimized, or fullscreen.
+  const { width, height } = mainWindow.getNormalBounds();
+  if (
+    electronConfig.windowSize?.width === width &&
+    electronConfig.windowSize?.height === height
+  ) {
+    return;
+  }
+  saveElectronConfig({ windowSize: { width, height } });
+}
+
+function scheduleMainWindowSizeSave() {
+  if (windowSizeSaveTimer) clearTimeout(windowSizeSaveTimer);
+  windowSizeSaveTimer = setTimeout(persistMainWindowSize, WINDOW_SIZE_SAVE_DELAY_MS);
 }
 
 function applyDockBehavior() {
@@ -485,50 +549,6 @@ function notifyGatewayReady() {
 // Window
 // ============================================================================
 
-const TITLE_BAR_PADDING_CSS = `
-  /* Only push the left sidebar nav down by 38px to clear macOS traffic lights.
-     The right column (topbar + content) stays at its natural position,
-     avoiding the empty gap the user reported. */
-  .shell-nav {
-    padding-top: 38px !important;
-  }
-  /* Mobile: .shell-nav becomes position: fixed — use top offset instead */
-  @media (max-width: 1100px) {
-    .shell-nav {
-      top: 38px !important;
-      padding-top: 0 !important;
-    }
-  }
-  /* Drag region: top 38px of the sidebar */
-  .shell-nav {
-    position: relative !important;
-  }
-  .shell-nav::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 38px;
-    -webkit-app-region: drag;
-    z-index: 100;
-    pointer-events: auto;
-  }
-  /* Let the main top bar move the frameless window while its controls remain interactive. */
-  .topbar {
-    -webkit-app-region: drag;
-  }
-  .topbar button,
-  .topbar a,
-  .topbar input,
-  .topbar select,
-  .topbar textarea,
-  .topbar [role="button"],
-  .topbar [contenteditable="true"] {
-    -webkit-app-region: no-drag;
-  }
-`;
-
 function injectTitleBarPadding(contents) {
   // Reserved for macOS traffic-light spacing. On Windows the dashboard renders
   // its own title bar and shifts the shell via the electron-win CSS class.
@@ -551,9 +571,10 @@ function showMainWindow() {
 }
 
 function createMainWindow() {
+  const windowSize = initialMainWindowSize();
   mainWindow = new BrowserWindow({
-    width: DEFAULT_WINDOW_WIDTH,
-    height: DEFAULT_WINDOW_HEIGHT,
+    width: windowSize.width,
+    height: windowSize.height,
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
     title: "OpenClaw",
@@ -586,6 +607,8 @@ function createMainWindow() {
     }
   });
 
+  mainWindow.on("resize", scheduleMainWindowSizeSave);
+
   // Inject title-bar padding when gateway page loads
   mainWindow.webContents.on("did-navigate", (_event, url) => {
     if (url.includes(GATEWAY_HOST)) {
@@ -614,6 +637,7 @@ function createMainWindow() {
 
   // Close hides to tray instead of quitting
   mainWindow.on("close", (event) => {
+    persistMainWindowSize();
     if (!app.isQuitting) {
       event.preventDefault();
       mainWindow.hide();
@@ -622,6 +646,10 @@ function createMainWindow() {
   });
 
   mainWindow.on("closed", () => {
+    if (windowSizeSaveTimer) {
+      clearTimeout(windowSizeSaveTimer);
+      windowSizeSaveTimer = null;
+    }
     mainWindow = null;
   });
 }
@@ -907,6 +935,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   app.isQuitting = true;
+  persistMainWindowSize();
   stopGateway();
 });
 

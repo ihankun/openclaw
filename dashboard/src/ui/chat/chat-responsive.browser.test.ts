@@ -58,15 +58,15 @@ function expectControlRect(rect: ControlRect | null, label: string): ControlRect
 
 function readUiCss(): string {
   const files = [
-    "ui/src/styles/base.css",
-    "ui/src/styles/layout.css",
-    "ui/src/styles/layout.mobile.css",
-    "ui/src/styles/components.css",
-    "ui/src/styles/chat/layout.css",
-    "ui/src/styles/chat/text.css",
-    "ui/src/styles/chat/grouped.css",
-    "ui/src/styles/chat/tool-cards.css",
-    "ui/src/styles/chat/sidebar.css",
+    "dashboard/src/styles/base.css",
+    "dashboard/src/styles/layout.css",
+    "dashboard/src/styles/layout.mobile.css",
+    "dashboard/src/styles/components.css",
+    "dashboard/src/styles/chat/layout.css",
+    "dashboard/src/styles/chat/text.css",
+    "dashboard/src/styles/chat/grouped.css",
+    "dashboard/src/styles/chat/tool-cards.css",
+    "dashboard/src/styles/chat/sidebar.css",
   ];
   return files.map((file) => readStyleSheet(file)).join("\n");
 }

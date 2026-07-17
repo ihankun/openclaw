@@ -117,11 +117,11 @@ export function canRunPlaywrightChromium(chromiumExecutablePath: string): boolea
 export async function startControlUiE2eServer(): Promise<ControlUiE2eServer> {
   const { createServer } = await import("vite");
   const repoRoot = resolveRepoRoot();
-  const uiRoot = path.join(repoRoot, "ui");
+  const uiRoot = path.join(repoRoot, "dashboard");
   const port = await resolveAvailableLoopbackPort();
   const server = await createServer({
     base: "/",
-    cacheDir: path.join(repoRoot, ".artifacts", "control-ui-e2e-vite"),
+    cacheDir: path.join(repoRoot, ".artifacts", "dashboard-control-ui-e2e-vite"),
     clearScreen: false,
     configFile: false,
     define: {
