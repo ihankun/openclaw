@@ -167,6 +167,7 @@ describe("control UI routing", () => {
     await app.updateComplete;
 
     expect(app.tab).toBe("dreams");
+    expectElement(app, ".content.content--dreams", HTMLElement);
     expectElement(app, ".dreams__tab", HTMLElement);
     expectElement(app, ".dreams__lobster", HTMLElement);
   });

@@ -5,7 +5,7 @@
 .dreams-page {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
   min-height: 0;
   overflow: hidden;
 }
@@ -52,7 +52,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: calc(100vh - 64px);
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   user-select: none;
 }
@@ -460,7 +461,7 @@
   gap: 24px;
   padding: 24px 32px 40px;
   flex: 1;
-  min-height: 320px;
+  min-height: 0;
   min-width: 0;
   overflow: auto;
 }
@@ -677,7 +678,7 @@
   flex-direction: column;
   padding: 24px 32px 64px;
   flex: 1;
-  min-height: 320px;
+  min-height: 0;
   min-width: 0;
   overflow: auto;
   position: relative;
@@ -820,6 +821,7 @@
 
 .dreams-diary__daychips {
   display: flex;
+  flex-shrink: 0;
   gap: 6px;
   margin: 0;
   width: min(100%, 920px);
@@ -1136,10 +1138,6 @@
 /* ---- Responsive ---- */
 
 @media (max-width: 880px) {
-  .dreams {
-    min-height: calc(100vh - 96px);
-  }
-
   .dreams-advanced {
     padding: 20px 16px 32px;
   }

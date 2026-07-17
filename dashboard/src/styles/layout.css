@@ -1358,6 +1358,12 @@ html.electron-win .shell {
   margin-top: 14px;
 }
 
+.content--dreams {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* Content header */
 .content-header {
   display: flex;
