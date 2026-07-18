@@ -1,0 +1,958 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>OpenClaw 初始化</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        color-scheme: light;
+        --canvas: #f4f5f7;
+        --canvas-deep: #e7eaf0;
+        --glass: rgba(255, 255, 255, 0.64);
+        --glass-edge: rgba(255, 255, 255, 0.9);
+        --glass-shadow: rgba(61, 65, 76, 0.16);
+        --glass-inset: rgba(255, 255, 255, 0.78);
+        --text: #24262c;
+        --text-strong: #15171b;
+        --muted: #737782;
+        --muted-soft: #969aa4;
+        --accent: #ee4148;
+        --accent-strong: #d92e36;
+        --accent-soft: rgba(238, 65, 72, 0.15);
+        --accent-cloud: rgba(255, 93, 99, 0.2);
+        --cool-cloud: rgba(83, 164, 181, 0.15);
+        --track: rgba(32, 35, 42, 0.08);
+        --chip: rgba(255, 255, 255, 0.48);
+        --chip-edge: rgba(79, 84, 96, 0.1);
+        --input-bg: rgba(255, 255, 255, 0.6);
+        --input-border: rgba(79, 84, 96, 0.18);
+        --input-focus: rgba(238, 65, 72, 0.35);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --canvas: #0d0e12;
+          --canvas-deep: #171920;
+          --glass: rgba(25, 27, 34, 0.68);
+          --glass-edge: rgba(255, 255, 255, 0.13);
+          --glass-shadow: rgba(0, 0, 0, 0.48);
+          --glass-inset: rgba(255, 255, 255, 0.07);
+          --text: #d8d9de;
+          --text-strong: #f5f5f7;
+          --muted: #9a9da7;
+          --muted-soft: #727681;
+          --accent: #ff555b;
+          --accent-strong: #f03f47;
+          --accent-soft: rgba(255, 85, 91, 0.18);
+          --accent-cloud: rgba(255, 73, 80, 0.18);
+          --cool-cloud: rgba(77, 154, 172, 0.13);
+          --track: rgba(255, 255, 255, 0.09);
+          --chip: rgba(255, 255, 255, 0.055);
+          --chip-edge: rgba(255, 255, 255, 0.08);
+          --input-bg: rgba(255, 255, 255, 0.06);
+          --input-border: rgba(255, 255, 255, 0.12);
+          --input-focus: rgba(255, 85, 91, 0.3);
+        }
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        position: relative;
+        background:
+          radial-gradient(circle at 16% 18%, var(--accent-cloud), transparent 32%),
+          radial-gradient(circle at 86% 78%, var(--cool-cloud), transparent 36%),
+          linear-gradient(145deg, var(--canvas), var(--canvas-deep));
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei",
+          sans-serif;
+        user-select: none;
+      }
+
+      body::before {
+        position: fixed;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+        background-size: 32px 32px;
+        content: "";
+        mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.45), transparent 82%);
+        pointer-events: none;
+      }
+
+      .titlebar-drag-region {
+        position: fixed;
+        z-index: 10;
+        top: 0;
+        right: 0;
+        left: 0;
+        height: 44px;
+        -webkit-app-region: drag;
+      }
+
+      .ambient-orb {
+        position: fixed;
+        width: min(34vw, 360px);
+        aspect-ratio: 1;
+        border-radius: 999px;
+        filter: blur(72px);
+        opacity: 0.52;
+        pointer-events: none;
+        will-change: transform;
+      }
+
+      .ambient-orb--red {
+        top: -14%;
+        left: 5%;
+        background: var(--accent-cloud);
+        animation: drift-red 9s ease-in-out infinite alternate;
+      }
+
+      .ambient-orb--blue {
+        right: 3%;
+        bottom: -18%;
+        background: var(--cool-cloud);
+        animation: drift-blue 11s ease-in-out infinite alternate;
+      }
+
+      .stage {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        width: 100%;
+        height: 100%;
+        place-items: center;
+        padding: 60px 24px 28px;
+        -webkit-app-region: drag;
+        overflow-y: auto;
+      }
+
+      .launch-card {
+        position: relative;
+        width: min(480px, 100%);
+        overflow: hidden;
+        border: 1px solid var(--glass-edge);
+        border-radius: 30px;
+        background: linear-gradient(145deg, var(--glass), color-mix(in srgb, var(--glass) 70%, transparent));
+        box-shadow:
+          0 28px 80px var(--glass-shadow),
+          inset 0 1px 0 var(--glass-inset);
+        padding: 34px 34px 30px;
+        text-align: center;
+        backdrop-filter: blur(30px) saturate(150%);
+        -webkit-backdrop-filter: blur(30px) saturate(150%);
+      }
+
+      .launch-card::before {
+        position: absolute;
+        top: -110px;
+        left: 50%;
+        width: 260px;
+        height: 180px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        content: "";
+        filter: blur(46px);
+        pointer-events: none;
+        transform: translateX(-50%);
+      }
+
+      .brand {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+
+      .logo-frame {
+        position: relative;
+        display: grid;
+        width: 72px;
+        height: 72px;
+        place-items: center;
+        margin-bottom: 18px;
+        border: 1px solid var(--glass-edge);
+        border-radius: 21px;
+        background: color-mix(in srgb, var(--glass) 72%, transparent);
+        box-shadow:
+          0 15px 38px var(--accent-soft),
+          inset 0 1px 0 var(--glass-inset);
+      }
+
+      .logo-frame::after {
+        position: absolute;
+        inset: 7px;
+        border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+        border-radius: 15px;
+        content: "";
+      }
+
+      .logo {
+        position: relative;
+        z-index: 1;
+        width: 54px;
+        height: 54px;
+        object-fit: contain;
+        filter: drop-shadow(0 10px 18px rgba(123, 20, 25, 0.18));
+      }
+
+      .eyebrow {
+        margin-bottom: 8px;
+        color: var(--accent-strong);
+        font-size: 11px;
+        font-weight: 750;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        color: var(--text-strong);
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.035em;
+        line-height: 1.3;
+      }
+
+      .subtitle {
+        max-width: 340px;
+        margin: 8px auto 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      /* Form */
+      .setup-form {
+        position: relative;
+        text-align: left;
+        -webkit-app-region: no-drag;
+      }
+
+      .form-section {
+        margin-bottom: 20px;
+      }
+
+      .form-section-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+        color: var(--text-strong);
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .form-section-title::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--chip-edge);
+      }
+
+      .form-group {
+        margin-bottom: 14px;
+      }
+
+      .form-label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .form-hint {
+        margin-top: 4px;
+        color: var(--muted-soft);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+
+      .form-input {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid var(--input-border);
+        border-radius: 12px;
+        background: var(--input-bg);
+        color: var(--text);
+        font-size: 13px;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+
+      .form-input:focus {
+        border-color: var(--input-focus);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+      }
+
+      .form-input::placeholder {
+        color: var(--muted-soft);
+      }
+
+      .form-input[type="password"] {
+        font-family: monospace;
+        letter-spacing: 0.08em;
+      }
+
+      .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .form-select {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid var(--input-border);
+        border-radius: 12px;
+        background: var(--input-bg);
+        color: var(--text);
+        font-size: 13px;
+        font-family: inherit;
+        outline: none;
+        cursor: pointer;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23969aa4' d='M3 4.5L6 8l3-3.5'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        padding-right: 34px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+
+      .form-select:focus {
+        border-color: var(--input-focus);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+      }
+
+      .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 0;
+      }
+
+      .checkbox-row input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+
+      .checkbox-row label {
+        color: var(--text);
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      /* Buttons */
+      .btn-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 24px;
+      }
+
+      .btn {
+        flex: 1;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 14px;
+        font-size: 14px;
+        font-weight: 600;
+        font-family: inherit;
+        cursor: pointer;
+        transition: all 0.2s;
+        -webkit-app-region: no-drag;
+      }
+
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: white;
+        box-shadow: 0 6px 24px var(--accent-soft);
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 32px color-mix(in srgb, var(--accent) 35%, transparent);
+      }
+
+      .btn-primary:active:not(:disabled) {
+        transform: translateY(0);
+      }
+
+      .btn-secondary {
+        background: var(--chip);
+        border: 1px solid var(--chip-edge);
+        color: var(--text);
+      }
+
+      .btn-secondary:hover:not(:disabled) {
+        background: color-mix(in srgb, var(--chip) 80%, transparent);
+      }
+
+      .btn-link {
+        background: none;
+        border: none;
+        color: var(--muted);
+        font-size: 12px;
+        padding: 8px;
+        cursor: pointer;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      .btn-link:hover {
+        color: var(--accent);
+      }
+
+      /* Status */
+      .status-panel {
+        position: relative;
+        margin-top: 18px;
+        overflow: hidden;
+        border: 1px solid var(--chip-edge);
+        border-radius: 14px;
+        background: var(--chip);
+        padding: 14px 16px;
+        text-align: left;
+      }
+
+      .status-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 12px;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+      }
+
+      .status-dot--pending {
+        background: var(--muted-soft);
+      }
+
+      .status-dot--active {
+        background: var(--accent);
+        box-shadow: 0 0 0 5px var(--accent-soft);
+        animation: pulse 1.8s ease-out infinite;
+      }
+
+      .status-dot--success {
+        background: #34c759;
+      }
+
+      .status-dot--error {
+        background: #ff3b30;
+      }
+
+      .status-text {
+        flex: 1;
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      .status-detail {
+        position: relative;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--chip-edge);
+        color: var(--muted-soft);
+        font-size: 11px;
+        line-height: 1.6;
+        font-family: monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+        max-height: 120px;
+        overflow-y: auto;
+      }
+
+      .detail-copy-btn {
+        position: absolute;
+        top: 8px;
+        right: 0;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--chip-edge);
+        border-radius: 8px;
+        background: var(--chip);
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.2s;
+        padding: 0;
+        font-size: 14px;
+        line-height: 1;
+      }
+
+      .detail-copy-btn:hover {
+        background: var(--accent-soft);
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .detail-copy-btn.copied {
+        background: rgba(52, 199, 89, 0.15);
+        color: #34c759;
+        border-color: #34c759;
+      }
+
+      .progress-track {
+        position: relative;
+        height: 4px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--track);
+        margin-top: 12px;
+      }
+
+      .progress-value {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: -40%;
+        width: 42%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, transparent, var(--accent), var(--accent-strong));
+        box-shadow: 0 0 18px var(--accent-soft);
+        animation: progress 1.55s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+
+      /* Steps indicator */
+      .steps-bar {
+        display: flex;
+        justify-content: center;
+        gap: 7px;
+        margin-top: 18px;
+        color: var(--muted-soft);
+        font-size: 11px;
+      }
+
+      .steps-bar span {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .steps-bar span + span::before {
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: currentColor;
+        content: "";
+        opacity: 0.5;
+      }
+
+      .step-active {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      @keyframes progress {
+        from { transform: translateX(0); }
+        to { transform: translateX(340%); }
+      }
+
+      @keyframes pulse {
+        0% { opacity: 0.7; transform: scale(0.65); }
+        75%, 100% { opacity: 0; transform: scale(1.55); }
+      }
+
+      @keyframes drift-red {
+        to { transform: translate(8vw, 6vh) scale(1.08); }
+      }
+
+      @keyframes drift-blue {
+        to { transform: translate(-7vw, -5vh) scale(0.92); }
+      }
+
+      @media (max-width: 560px), (max-height: 680px) {
+        .stage {
+          padding: 50px 18px 22px;
+        }
+        .launch-card {
+          border-radius: 24px;
+          padding: 26px 24px 23px;
+        }
+        .logo-frame {
+          width: 62px;
+          height: 62px;
+          margin-bottom: 14px;
+          border-radius: 18px;
+        }
+        .logo-frame::after {
+          border-radius: 13px;
+        }
+        .logo {
+          width: 46px;
+          height: 46px;
+        }
+        h1 {
+          font-size: 19px;
+        }
+        .form-row {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .ambient-orb,
+        .progress-value,
+        .status-dot--active {
+          animation: none;
+        }
+        .progress-value {
+          left: 0;
+          width: 64%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="titlebar-drag-region" aria-hidden="true"></div>
+    <div class="ambient-orb ambient-orb--red" aria-hidden="true"></div>
+    <div class="ambient-orb ambient-orb--blue" aria-hidden="true"></div>
+
+    <main class="stage">
+      <section class="launch-card" aria-labelledby="setup-title">
+        <div class="brand">
+          <div class="logo-frame">
+            <img
+              class="logo"
+              src="../../assets/openclaw-logo.png"
+              alt="OpenClaw"
+              draggable="false"
+            />
+          </div>
+          <div class="eyebrow">OpenClaw Desktop</div>
+          <h1 id="setup-title">欢迎使用 OpenClaw</h1>
+          <p class="subtitle">首次使用需要进行初始化配置，这将创建配置文件和 workspace 目录。</p>
+        </div>
+
+        <!-- Step 1: Form -->
+        <div id="step-form" class="setup-form">
+          <div class="form-section">
+            <div class="form-section-title">AI 提供商</div>
+            <div class="form-group">
+              <label class="form-label" for="provider">提供商</label>
+              <select class="form-select" id="provider">
+                <optgroup label="主流提供商">
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="google">Google AI Studio</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="xai">xAI (Grok)</option>
+                  <option value="mistral">Mistral</option>
+                </optgroup>
+                <optgroup label="中国提供商">
+                  <option value="qwen">Qwen (通义千问)</option>
+                  <option value="moonshot">Moonshot (月之暗面)</option>
+                  <option value="kimi">Kimi Coding</option>
+                  <option value="minimax">MiniMax</option>
+                  <option value="zai">Z.AI (零一万物)</option>
+                  <option value="xiaomi">Xiaomi (小米)</option>
+                  <option value="stepfun">StepFun (阶跃星辰)</option>
+                  <option value="qianfan">Qianfan (百度千帆)</option>
+                  <option value="volcengine">Volcengine (火山引擎)</option>
+                  <option value="byteplus">BytePlus</option>
+                  <option value="novita">NovitaAI</option>
+                </optgroup>
+                <optgroup label="代理 / 聚合">
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="github-copilot">GitHub Copilot</option>
+                  <option value="copilot-proxy">Copilot Proxy</option>
+                  <option value="litellm">LiteLLM</option>
+                  <option value="cloudflare-ai-gateway">Cloudflare AI Gateway</option>
+                  <option value="vercel-ai-gateway">Vercel AI Gateway</option>
+                </optgroup>
+                <optgroup label="本地运行">
+                  <option value="ollama">Ollama</option>
+                  <option value="lmstudio">LM Studio</option>
+                  <option value="vllm">vLLM</option>
+                  <option value="sglang">SGLang</option>
+                  <option value="llama-cpp">llama.cpp</option>
+                </optgroup>
+                <optgroup label="云平台">
+                  <option value="amazon-bedrock">Amazon Bedrock</option>
+                  <option value="anthropic-vertex">Anthropic Vertex</option>
+                  <option value="microsoft-foundry">Microsoft Foundry</option>
+                  <option value="nvidia">NVIDIA</option>
+                  <option value="cerebras">Cerebras</option>
+                  <option value="groq">Groq</option>
+                  <option value="deepinfra">DeepInfra</option>
+                  <option value="fireworks">Fireworks</option>
+                  <option value="together">Together</option>
+                  <option value="huggingface">Hugging Face</option>
+                  <option value="cohere">Cohere</option>
+                  <option value="gmi">GMI Cloud</option>
+                </optgroup>
+                <optgroup label="其他">
+                  <option value="arcee">Arcee AI</option>
+                  <option value="chutes">Chutes</option>
+                  <option value="venice">Venice</option>
+                  <option value="synthetic">Synthetic</option>
+                  <option value="vydra">Vydra</option>
+                  <option value="opencode">OpenCode Zen</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="apiKey">API Key</label>
+              <input
+                class="form-input"
+                type="password"
+                id="apiKey"
+                placeholder="sk-..."
+                autocomplete="off"
+              />
+              <div class="form-hint">你的密钥仅存储在本地，不会上传到任何服务器。</div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">网关设置</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="port">端口</label>
+                <input
+                  class="form-input"
+                  type="text"
+                  id="port"
+                  placeholder="18789"
+                  value="18789"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="auth">认证方式</label>
+                <select class="form-select" id="auth">
+                  <option value="none">无认证</option>
+                  <option value="token">Token 认证</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="checkbox-row">
+              <input type="checkbox" id="skipChannels" />
+              <label for="skipChannels">跳过频道配置（稍后可在设置中添加）</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="skipSkills" />
+              <label for="skipSkills">跳过技能配置（稍后可在设置中添加）</label>
+            </div>
+          </div>
+
+          <div class="btn-group">
+            <button class="btn btn-secondary" id="quitBtn">退出</button>
+            <button class="btn btn-primary" id="setupBtn">开始初始化</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Progress -->
+        <div id="step-progress" class="setup-form" style="display:none;">
+          <div class="progress-panel" role="status" aria-live="polite">
+            <div class="status-row">
+              <span class="status-dot status-dot--active" id="statusDot"></span>
+              <span class="status-text" id="statusText">正在初始化...</span>
+            </div>
+            <div class="progress-track" aria-hidden="true">
+              <div class="progress-value" id="progressBar"></div>
+            </div>
+            <div class="status-detail" id="statusDetail"></div>
+          </div>
+
+          <div class="steps-bar" aria-hidden="true">
+            <span id="step1">创建配置</span>
+            <span id="step2">初始化工作区</span>
+            <span id="step3">完成</span>
+          </div>
+        </div>
+
+        <!-- Step 3: Done -->
+        <div id="step-done" class="setup-form" style="display:none;">
+          <div class="status-panel">
+            <div class="status-row">
+              <span class="status-dot status-dot--success"></span>
+              <span class="status-text">初始化完成！</span>
+            </div>
+          </div>
+          <p class="subtitle" style="margin-top:16px;">正在启动网关，请稍候...</p>
+        </div>
+
+        <!-- Error -->
+        <div id="step-error" class="setup-form" style="display:none;">
+          <div class="status-panel">
+            <div class="status-row">
+              <span class="status-dot status-dot--error"></span>
+              <span class="status-text" id="errorTitle">初始化失败</span>
+            </div>
+            <div class="status-detail" id="errorDetailWrap">
+              <button class="detail-copy-btn" id="copyErrorBtn" title="复制错误信息">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 11V3.5A.5.5 0 0 1 3.5 3H11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              </button>
+              <span id="errorDetail"></span>
+            </div>
+          </div>
+          <div class="btn-group" style="margin-top:18px;">
+            <button class="btn btn-secondary" id="quitBtn2">退出</button>
+            <button class="btn btn-primary" id="retryBtn">重试</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      function showStep(step) {
+        $('step-form').style.display = step === 'form' ? '' : 'none';
+        $('step-progress').style.display = step === 'progress' ? '' : 'none';
+        $('step-done').style.display = step === 'done' ? '' : 'none';
+        $('step-error').style.display = step === 'error' ? '' : 'none';
+      }
+
+      function setStatus(text, detail, dotClass) {
+        $('statusText').textContent = text;
+        if (detail !== undefined) $('statusDetail').textContent = detail;
+        if (dotClass) {
+          $('statusDot').className = 'status-dot ' + dotClass;
+        }
+      }
+
+      function setActiveStep(n) {
+        for (let i = 1; i <= 3; i++) {
+          const el = $('step' + i);
+          el.className = i <= n ? 'step-active' : '';
+        }
+      }
+
+      function buildArgs() {
+        const args = ['setup', '--baseline'];
+        const port = $('port').value.trim();
+        const auth = $('auth').value;
+        const skipChannels = $('skipChannels').checked;
+        const skipSkills = $('skipSkills').checked;
+
+        if (port && port !== '18789') args.push('--gateway-port', port);
+        if (auth === 'token') args.push('--gateway-auth', 'token');
+        if (skipChannels) args.push('--skip-channels');
+        if (skipSkills) args.push('--skip-skills');
+
+        return args;
+      }
+
+      async function runSetup() {
+        showStep('progress');
+        setActiveStep(1);
+        setStatus('正在初始化...', '', 'status-dot--active');
+        $('progressBar').style.display = '';
+
+        try {
+          const args = buildArgs();
+          const result = await window.electronAPI.runSetupWithArgs(args);
+
+          if (!result.success) {
+            const detail = result.error || result.stderr || result.stdout || '未知错误';
+            $('errorDetail').textContent = detail;
+            $('errorTitle').textContent = '初始化失败';
+            showStep('error');
+            return;
+          }
+
+          // Step 2: Write provider config if API key was entered
+          setActiveStep(2);
+          const apiKey = $('apiKey').value.trim();
+          const provider = $('provider').value;
+
+          if (apiKey) {
+            setStatus('正在配置提供商...', '', 'status-dot--active');
+            const cfgResult = await window.electronAPI.writeProviderConfig(provider, apiKey);
+            if (!cfgResult.success) {
+              $('errorDetail').textContent = '基础配置已创建，但写入提供商配置失败：' + (cfgResult.error || '未知错误');
+              $('errorTitle').textContent = '提供商配置失败';
+              showStep('error');
+              return;
+            }
+          }
+
+          // Done
+          setActiveStep(3);
+          setStatus('初始化完成！', '', 'status-dot--success');
+          $('progressBar').style.display = 'none';
+          showStep('done');
+          setTimeout(() => {
+            window.electronAPI.notifySetupComplete();
+          }, 1500);
+        } catch (err) {
+          $('progressBar').style.display = 'none';
+          const detail = err.message || String(err);
+          $('errorDetail').textContent = detail;
+          $('errorTitle').textContent = '初始化出错';
+          showStep('error');
+        }
+      }
+
+      $('setupBtn').addEventListener('click', runSetup);
+      $('retryBtn').addEventListener('click', () => {
+        showStep('form');
+      });
+      $('quitBtn').addEventListener('click', () => window.electronAPI.quitApp());
+      $('quitBtn2').addEventListener('click', () => window.electronAPI.quitApp());
+
+      $('apiKey').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') runSetup();
+      });
+
+      $('copyErrorBtn').addEventListener('click', async () => {
+        const text = $('errorDetail').textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          const btn = $('copyErrorBtn');
+          btn.classList.add('copied');
+          btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3.5 3.5 6.5-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+          setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 11V3.5A.5.5 0 0 1 3.5 3H11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+          }, 2000);
+        } catch {
+          // Fallback
+          const range = document.createRange();
+          range.selectNodeContents($('errorDetail'));
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      });
+    </script>
+  </body>
+</html>

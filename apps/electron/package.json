@@ -1,6 +1,6 @@
 {
   "name": "openclaw-desktop",
-  "version": "2026.6.13",
+  "version": "2026.6.14",
   "description": "OpenClaw Desktop - Electron wrapper",
   "private": true,
   "main": "src/main.js",

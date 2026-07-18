@@ -23,6 +23,12 @@ const electronAPI = {
   /** Run setup command (for first-time initialization). */
   runSetup: () => ipcRenderer.invoke("run-setup"),
 
+  /** Run setup command with custom args array. */
+  runSetupWithArgs: (args) => ipcRenderer.invoke("run-setup-args", args),
+
+  /** Write provider config directly to openclaw.json. */
+  writeProviderConfig: (provider, apiKey) => ipcRenderer.invoke("write-provider-config", { provider, apiKey }),
+
   /** Notify that setup is complete. */
   notifySetupComplete: () => ipcRenderer.send("setup-complete"),
 

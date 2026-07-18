@@ -40,7 +40,15 @@ if (!plat || !arch) {
 
 const ext = plat === "win" ? "zip" : "tar.gz";
 const dirName = `node-${version}-${plat}-${arch}`;
-const url = `https://nodejs.org/dist/${version}/${dirName}.${ext}`;
+const fileName = `${dirName}.${ext}`;
+
+// Use npmmirror (China) as primary, fallback to official
+const MIRRORS = [
+  `https://npmmirror.com/mirrors/node/${version}/${fileName}`,
+  `https://registry.npmmirror.com/-/binary/node/${version}/${fileName}`,
+  `https://nodejs.org/dist/${version}/${fileName}`,
+];
+const url = MIRRORS[0];
 const archivePath = path.join(RESOURCES_DIR, `${dirName}.${ext}`);
 
 // ---- helpers ----
@@ -75,6 +83,23 @@ function downloadFile(url, dest) {
   });
 }
 
+async function downloadWithFallbacks(dest) {
+  for (let i = 0; i < MIRRORS.length; i++) {
+    const mirrorUrl = MIRRORS[i];
+    console.log(`  Trying mirror ${i + 1}/${MIRRORS.length}: ${mirrorUrl}`);
+    try {
+      await downloadFile(mirrorUrl, dest);
+      return;
+    } catch (err) {
+      console.warn(`  Failed: ${err.message}`);
+      if (i < MIRRORS.length - 1) {
+        console.log(`  Falling back to next mirror...`);
+      }
+    }
+  }
+  throw new Error(`All mirrors failed. Tried:\n${MIRRORS.map(u => `  - ${u}`).join("\n")}`);
+}
+
 // ---- main ----
 
 const currentVersion = await getCurrentVersion();
@@ -88,8 +113,7 @@ mkdirSync(RESOURCES_DIR, { recursive: true });
 if (existsSync(NODE_DIR)) rmSync(NODE_DIR, { recursive: true });
 
 try {
-  console.log(`  Fetching ${url}...`);
-  await downloadFile(url, archivePath);
+  await downloadWithFallbacks(archivePath);
 
   console.log("  Extracting...");
   mkdirSync(NODE_DIR, { recursive: true });
