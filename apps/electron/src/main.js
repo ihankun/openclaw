@@ -17,6 +17,7 @@ const {
   dialog,
   Tray,
   nativeImage,
+  nativeTheme,
   screen,
 } = require("electron");
 const { spawn } = require("node:child_process");
@@ -577,6 +578,7 @@ function createMainWindow() {
     height: windowSize.height,
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0d0e12" : "#f4f5f7",
     title: "OpenClaw",
     titleBarStyle: "hidden",
     trafficLightPosition: { x: 16, y: 16 },
