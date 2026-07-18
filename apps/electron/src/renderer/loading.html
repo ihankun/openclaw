@@ -295,12 +295,12 @@
         position: absolute;
         top: 0;
         bottom: 0;
-        left: -40%;
-        width: 42%;
+        left: 0;
+        width: 0%;
         border-radius: inherit;
         background: linear-gradient(90deg, transparent, var(--accent), var(--accent-strong));
         box-shadow: 0 0 18px var(--accent-soft);
-        animation: progress 1.55s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        transition: width 0.5s ease;
       }
 
       .startup-steps {
@@ -427,28 +427,66 @@
           </div>
           <div class="eyebrow">OpenClaw Desktop</div>
           <h1 id="startup-title">正在启动本地网关</h1>
-          <p class="subtitle">正在恢复服务与工作区，请稍候片刻。</p>
+          <p class="subtitle" id="progress-subtitle">正在恢复服务与工作区，请稍候片刻。</p>
         </div>
 
         <div class="progress-panel" role="status" aria-live="polite">
           <div class="status-row">
             <div class="status-label">
               <span class="status-dot" aria-hidden="true"></span>
-              <span>正在连接 OpenClaw 服务</span>
+              <span id="progress-label">正在连接 OpenClaw 服务</span>
             </div>
-            <span class="status-hint">安全启动</span>
+            <span class="status-hint" id="progress-elapsed">安全启动</span>
           </div>
           <div class="progress-track" aria-hidden="true">
-            <div class="progress-value"></div>
+            <div class="progress-value" id="progress-bar"></div>
           </div>
         </div>
 
-        <div class="startup-steps" aria-hidden="true">
-          <span>启动网关</span>
-          <span>加载界面</span>
-          <span>恢复会话</span>
-        </div>
+
       </section>
     </main>
+
+    <script>
+      const steps = [
+        "dotenv", "env-select", "pre-bootstrap", "bootstrap",
+        "config", "auth", "starting",
+        "plugins", "plugins-table", "plugins-load",
+        "handlers", "http", "http-ready",
+        "channels", "sidecars", "sidecars-ready",
+        "maintenance", "ready"
+      ];
+      const STEP_PCT = 100 / steps.length; // each step = ~5.5%
+
+      const labelEl = document.getElementById("progress-label");
+      const elapsedEl = document.getElementById("progress-elapsed");
+      const barEl = document.getElementById("progress-bar");
+      const subtitleEl = document.getElementById("progress-subtitle");
+
+      let currentStep = -1;
+
+      if (window.electronAPI && window.electronAPI.onGatewayProgress) {
+        window.electronAPI.onGatewayProgress((data) => {
+          const idx = steps.indexOf(data.step);
+          if (idx === -1) return;
+          if (idx <= currentStep) return; // never go back
+
+          currentStep = idx;
+          const pct = ((idx + 1) / steps.length) * 100;
+          barEl.style.width = pct.toFixed(1) + "%";
+          labelEl.textContent = data.label;
+
+          if (data.step === "ready") {
+            subtitleEl.textContent = "网关已就绪，正在加载界面...";
+          }
+        });
+      }
+
+      let counter = 0;
+      setInterval(() => {
+        counter++;
+        elapsedEl.textContent = counter + "s";
+      }, 1000);
+    </script>
   </body>
 </html>

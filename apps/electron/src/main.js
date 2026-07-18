@@ -33,7 +33,11 @@ const { TITLE_BAR_PADDING_CSS } = require("./title-bar-css.js");
 // ============================================================================
 function getLogFile() {
   const now = new Date();
-  const date = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  // Use local date for filename (not UTC)
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const date = `${year}-${month}-${day}`;
   const dir = app.isPackaged
     ? app.getPath("userData")
     : path.join(os.homedir(), ".openclaw", "electron");
@@ -507,15 +511,37 @@ function startGateway() {
     const text = data.toString();
     process.stdout.write(`[gateway] ${data}`);
     log("[gateway]", text.trim());
+
+    // Send progress updates to loading page
+    const progressMap = [
+      { match: "loading configuration", step: "config", label: "加载配置文件" },
+      { match: "resolving authentication", step: "auth", label: "验证认证信息" },
+      { match: "starting...", step: "starting", label: "初始化网关" },
+      { match: "plugins.bootstrap", step: "plugins", label: "扫描插件 (135个)" },
+      { match: "plugins.gateway-load", step: "plugins-load", label: "加载插件模块" },
+      { match: "starting HTTP server", step: "http", label: "启动HTTP服务器" },
+      { match: "http server listening", step: "http-ready", label: "HTTP服务器就绪" },
+      { match: "starting channels and sidecars", step: "channels", label: "启动频道服务" },
+      { match: "gateway ready", step: "ready", label: "网关就绪" },
+    ];
+    for (const p of progressMap) {
+      if (text.includes(p.match)) {
+        const elapsed = ((Date.now() - spawnTime) / 1000).toFixed(0);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("gateway:progress", {
+            step: p.step,
+            label: p.label,
+            elapsed,
+          });
+        }
+      }
+    }
+
+    // HTTP server is ready — show dashboard immediately for faster UX
+    // Provider auth pre-warm happens later (~25s after) but user can browse UI meanwhile
     if (!gatewayReady && text.includes("http server listening")) {
       const elapsed = ((Date.now() - spawnTime) / 1000).toFixed(1);
       log(`[gateway] http server ready in ${elapsed}s`);
-    }
-    // Wait for provider auth pre-warm before marking gateway as truly ready
-    // This prevents "Unknown model" errors from provider runtime race condition
-    if (!gatewayReady && text.includes("provider auth state pre-warmed")) {
-      const elapsed = ((Date.now() - spawnTime) / 1000).toFixed(1);
-      log(`[gateway] fully ready in ${elapsed}s`);
       gatewayReady = true;
       gatewayStarting = false;
       notifyGatewayReady();
@@ -526,6 +552,37 @@ function startGateway() {
     const text = data.toString();
     process.stderr.write(`[gateway] ${data}`);
     log("[gateway:err]", text.trim());
+
+    // Parse startup traces from stderr for progress updates
+    const traceProgressMap = [
+      { match: "cli.main.dotenv", step: "dotenv", label: "加载环境变量" },
+      { match: "cli.main.gateway-run-select-environment", step: "env-select", label: "选择运行环境" },
+      { match: "cli.main.gateway-run-pre-bootstrap", step: "pre-bootstrap", label: "预引导检查" },
+      { match: "cli.main.gateway-run-bootstrap", step: "bootstrap", label: "插件索引导入" },
+      { match: "cli.config-snapshot", step: "config", label: "加载配置文件" },
+      { match: "cli.auth-resolve", step: "auth", label: "验证认证信息" },
+      { match: "cli.gateway-loop", step: "starting", label: "初始化网关" },
+      { match: "plugins.bootstrap", step: "plugins", label: "扫描插件索引" },
+      { match: "plugins.lookup-table", step: "plugins-table", label: "构建插件查找表" },
+      { match: "plugins.gateway-load", step: "plugins-load", label: "加载网关插件" },
+      { match: "gateway.handlers", step: "handlers", label: "注册API处理程序" },
+      { match: "http.listen", step: "http", label: "启动HTTP服务器" },
+      { match: "sidecars.total", step: "sidecars", label: "启动附属服务" },
+      { match: "sidecars.ready", step: "sidecars-ready", label: "附属服务就绪" },
+      { match: "post-ready.maintenance", step: "maintenance", label: "后台维护任务" },
+    ];
+    for (const p of traceProgressMap) {
+      if (text.includes(p.match)) {
+        const elapsed = ((Date.now() - spawnTime) / 1000).toFixed(0);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("gateway:progress", {
+            step: p.step,
+            label: p.label,
+            elapsed,
+          });
+        }
+      }
+    }
   });
 
   gatewayProcess.on("error", (err) => {

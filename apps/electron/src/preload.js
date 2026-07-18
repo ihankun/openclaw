@@ -55,6 +55,13 @@ const electronAPI = {
     return () => ipcRenderer.removeListener("gateway:exited", handler);
   },
 
+  /** Listen for gateway-progress event (startup stages). Returns unsubscribe function. */
+  onGatewayProgress: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on("gateway:progress", handler);
+    return () => ipcRenderer.removeListener("gateway:progress", handler);
+  },
+
   /** Minimize the window. */
   minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
 
