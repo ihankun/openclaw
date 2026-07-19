@@ -990,6 +990,10 @@ function setupIpcHandlers() {
   // Handle setup completion
   ipcMain.on("setup-complete", () => {
     needsSetup = false;
+    // Load loading page (shows progress bar), then start gateway
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadURL(loadingPageURL());
+    }
     startGateway();
   });
   
@@ -997,6 +1001,66 @@ function setupIpcHandlers() {
   ipcMain.on("quit-app", () => {
     app.isQuitting = true;
     app.quit();
+  });
+
+  // Write channel config to openclaw.json
+  ipcMain.handle("write-channel-config", async (_event, channels) => {
+    try {
+      const homedir = os.homedir();
+      const stateDir = path.join(homedir, ".openclaw");
+      const configPath = path.join(stateDir, "openclaw.json");
+
+      let config = {};
+      if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      }
+
+      if (!config.channels) config.channels = {};
+
+      for (const [ch, data] of Object.entries(channels)) {
+        if (!config.channels[ch]) config.channels[ch] = {};
+        Object.assign(config.channels[ch], data);
+      }
+
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+      log("[config] wrote channel config for", Object.keys(channels).join(", "));
+      return { success: true };
+    } catch (err) {
+      log("[config] channel write error:", err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Write skill config to openclaw.json
+  ipcMain.handle("write-skill-config", async (_event, skills) => {
+    try {
+      const homedir = os.homedir();
+      const stateDir = path.join(homedir, ".openclaw");
+      const configPath = path.join(stateDir, "openclaw.json");
+
+      let config = {};
+      if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      }
+
+      if (!config.skills) config.skills = {};
+      if (!config.skills.allowBundled) config.skills.allowBundled = [];
+
+      for (const skill of skills) {
+        if (!config.skills.allowBundled.includes(skill)) {
+          config.skills.allowBundled.push(skill);
+        }
+      }
+
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+      log("[config] wrote skill config:", skills.join(", "));
+      return { success: true };
+    } catch (err) {
+      log("[config] skill write error:", err.message);
+      return { success: false, error: err.message };
+    }
   });
   
   // Config

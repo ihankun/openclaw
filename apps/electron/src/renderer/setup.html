@@ -138,7 +138,7 @@
         width: 100%;
         height: 100%;
         place-items: center;
-        padding: 60px 24px 28px;
+        padding: 32px 24px 28px;
         -webkit-app-region: drag;
         overflow-y: auto;
       }
@@ -146,6 +146,9 @@
       .launch-card {
         position: relative;
         width: min(480px, 100%);
+        height: calc(100vh - 60px);
+        display: flex;
+        flex-direction: column;
         overflow: hidden;
         border: 1px solid var(--glass-edge);
         border-radius: 30px;
@@ -243,6 +246,8 @@
         position: relative;
         text-align: left;
         -webkit-app-region: no-drag;
+        display: flex;
+        flex-direction: column;
       }
 
       .form-section {
@@ -547,6 +552,35 @@
         animation: progress 1.55s cubic-bezier(0.4, 0, 0.2, 1) infinite;
       }
 
+      .progress-value.pct {
+        position: relative;
+        top: auto;
+        bottom: auto;
+        left: auto;
+        width: 0;
+        box-shadow: none;
+        animation: none;
+        transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .status-label {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 9px;
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .status-hint {
+        flex: 0 0 auto;
+        color: var(--muted-soft);
+        font-size: 11px;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
+
       /* Steps indicator */
       .steps-bar {
         display: flex;
@@ -577,9 +611,132 @@
         font-weight: 600;
       }
 
-      @keyframes progress {
-        from { transform: translateX(0); }
-        to { transform: translateX(340%); }
+      /* Channel cards */
+      .scroll-list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+
+      .scroll-list::-webkit-scrollbar {
+        width: 5px;
+      }
+
+      .scroll-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .scroll-list::-webkit-scrollbar-thumb {
+        background: var(--chip-edge);
+        border-radius: 999px;
+      }
+
+      .channel-card {
+        border: 1px solid var(--chip-edge);
+        border-radius: 14px;
+        background: var(--chip);
+        margin-bottom: 10px;
+        overflow: hidden;
+      }
+
+      .channel-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+      }
+
+      .channel-icon {
+        font-size: 18px;
+      }
+
+      .channel-name {
+        flex: 1;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .channel-fields {
+        padding: 0 14px 12px;
+      }
+
+      /* Skill rows */
+      .skill-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--chip-edge);
+      }
+
+      .skill-row:last-child {
+        border-bottom: none;
+      }
+
+      .skill-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .skill-name {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .skill-desc {
+        display: block;
+        font-size: 11px;
+        color: var(--muted-soft);
+        margin-top: 2px;
+      }
+
+      /* Toggle switch */
+      .toggle {
+        position: relative;
+        display: inline-block;
+        width: 40px;
+        height: 22px;
+        flex: 0 0 auto;
+      }
+
+      .toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .toggle-slider {
+        position: absolute;
+        inset: 0;
+        border-radius: 22px;
+        background: var(--track);
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .toggle-slider::before {
+        content: "";
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        left: 3px;
+        bottom: 3px;
+        border-radius: 50%;
+        background: white;
+        transition: transform 0.2s;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      }
+
+      .toggle input:checked + .toggle-slider {
+        background: var(--accent);
+      }
+
+      .toggle input:checked + .toggle-slider::before {
+        transform: translateX(18px);
       }
 
       @keyframes pulse {
@@ -778,7 +935,446 @@
           </div>
         </div>
 
-        <!-- Step 2: Progress -->
+        <!-- Step 2: Channels -->
+        <div id="step-channels" class="setup-form" style="display:none;flex:1;min-height:0;flex-direction:column;">
+          <div style="flex:0 0 auto;">
+            <div class="form-section-title">聊天频道</div>
+            <p class="form-hint" style="margin-bottom:10px;">选择你要使用的聊天平台，之后可在设置中添加或修改。</p>
+          </div>
+
+          <div class="scroll-list">
+            <div class="channel-card" data-channel="telegram">
+              <div class="channel-header">
+                <span class="channel-icon">📱</span>
+                <span class="channel-name">Telegram</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="telegram"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Bot Token</label>
+                  <input class="form-input channel-field" data-channel="telegram" data-field="token" type="password" placeholder="从 @BotFather 获取" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="discord">
+              <div class="channel-header">
+                <span class="channel-icon">🎮</span>
+                <span class="channel-name">Discord</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="discord"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Bot Token</label>
+                  <input class="form-input channel-field" data-channel="discord" data-field="token" type="password" placeholder="从 Discord Developer Portal 获取" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="whatsapp">
+              <div class="channel-header">
+                <span class="channel-icon">💬</span>
+                <span class="channel-name">WhatsApp</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="whatsapp"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <p class="form-hint">启用后需要扫码连接，请准备好手机。</p>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="slack">
+              <div class="channel-header">
+                <span class="channel-icon">💼</span>
+                <span class="channel-name">Slack</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="slack"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Bot Token</label>
+                  <input class="form-input channel-field" data-channel="slack" data-field="token" type="password" placeholder="xoxb-..." autocomplete="off"/>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">App Token（可选）</label>
+                  <input class="form-input channel-field" data-channel="slack" data-field="appToken" type="password" placeholder="xapp-..." autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="msteams">
+              <div class="channel-header">
+                <span class="channel-icon">🏢</span>
+                <span class="channel-name">Microsoft Teams</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="msteams"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Bot Token</label>
+                  <input class="form-input channel-field" data-channel="msteams" data-field="token" type="password" placeholder="Microsoft Teams Bot Token" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="matrix">
+              <div class="channel-header">
+                <span class="channel-icon">🔗</span>
+                <span class="channel-name">Matrix</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="matrix"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Access Token</label>
+                  <input class="form-input channel-field" data-channel="matrix" data-field="token" type="password" placeholder="Matrix Access Token" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="mattermost">
+              <div class="channel-header">
+                <span class="channel-icon">📋</span>
+                <span class="channel-name">Mattermost</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="mattermost"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Bot Token</label>
+                  <input class="form-input channel-field" data-channel="mattermost" data-field="token" type="password" placeholder="Mattermost Bot Token" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="signal">
+              <div class="channel-header">
+                <span class="channel-icon">🔒</span>
+                <span class="channel-name">Signal</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="signal"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Phone Number</label>
+                  <input class="form-input channel-field" data-channel="signal" data-field="phone" type="text" placeholder="+86 ..." autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="imessage">
+              <div class="channel-header">
+                <span class="channel-icon">🍎</span>
+                <span class="channel-name">iMessage</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="imessage"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <p class="form-hint">需要在 Mac 上运行，通过 BlueBubbles 或类似服务桥接。</p>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="irc">
+              <div class="channel-header">
+                <span class="channel-icon">💬</span>
+                <span class="channel-name">IRC</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="irc"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Server</label>
+                  <input class="form-input channel-field" data-channel="irc" data-field="server" type="text" placeholder="irc.libera.chat" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="line">
+              <div class="channel-header">
+                <span class="channel-icon">🟢</span>
+                <span class="channel-name">LINE</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="line"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Channel Secret</label>
+                  <input class="form-input channel-field" data-channel="line" data-field="token" type="password" placeholder="LINE Channel Secret" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="feishu">
+              <div class="channel-header">
+                <span class="channel-icon">🐦</span>
+                <span class="channel-name">飞书 (Feishu)</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="feishu"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">App Secret</label>
+                  <input class="form-input channel-field" data-channel="feishu" data-field="token" type="password" placeholder="飞书 App Secret" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="qqbot">
+              <div class="channel-header">
+                <span class="channel-icon">🐧</span>
+                <span class="channel-name">QQ Bot</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="qqbot"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Bot Token</label>
+                  <input class="form-input channel-field" data-channel="qqbot" data-field="token" type="password" placeholder="QQ Bot Token" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="nostr">
+              <div class="channel-header">
+                <span class="channel-icon">🌐</span>
+                <span class="channel-name">Nostr</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="nostr"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Relay URL</label>
+                  <input class="form-input channel-field" data-channel="nostr" data-field="server" type="text" placeholder="wss://relay.example.com" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="twitch">
+              <div class="channel-header">
+                <span class="channel-icon">🎥</span>
+                <span class="channel-name">Twitch</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="twitch"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">OAuth Token</label>
+                  <input class="form-input channel-field" data-channel="twitch" data-field="token" type="password" placeholder="oauth:..." autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="googlechat">
+              <div class="channel-header">
+                <span class="channel-icon">📧</span>
+                <span class="channel-name">Google Chat</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="googlechat"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Service Account JSON</label>
+                  <input class="form-input channel-field" data-channel="googlechat" data-field="token" type="password" placeholder="Google Service Account JSON" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="nextcloud-talk">
+              <div class="channel-header">
+                <span class="channel-icon">☁️</span>
+                <span class="channel-name">Nextcloud Talk</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="nextcloud-talk"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">API Token</label>
+                  <input class="form-input channel-field" data-channel="nextcloud-talk" data-field="token" type="password" placeholder="Nextcloud API Token" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="tlon">
+              <div class="channel-header">
+                <span class="channel-icon"> Urbit</span>
+                <span class="channel-name">Tlon (Urbit)</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="tlon"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Ship URL</label>
+                  <input class="form-input channel-field" data-channel="tlon" data-field="server" type="text" placeholder="http://localhost:8080" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="synology-chat">
+              <div class="channel-header">
+                <span class="channel-icon">🖥️</span>
+                <span class="channel-name">Synology Chat</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="synology-chat"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Webhook Token</label>
+                  <input class="form-input channel-field" data-channel="synology-chat" data-field="token" type="password" placeholder="Synology Chat Webhook Token" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="sms">
+              <div class="channel-header">
+                <span class="channel-icon">📲</span>
+                <span class="channel-name">SMS</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="sms"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Twilio SID</label>
+                  <input class="form-input channel-field" data-channel="sms" data-field="token" type="password" placeholder="Twilio Account SID" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="clickclack">
+              <div class="channel-header">
+                <span class="channel-icon">⌨️</span>
+                <span class="channel-name">ClickClack</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="clickclack"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <p class="form-hint">物理按键触发的本地交互。</p>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="raft">
+              <div class="channel-header">
+                <span class="channel-icon">🪵</span>
+                <span class="channel-name">Raft</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="raft"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <p class="form-hint">本地 WebSocket 连接。</p>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="zalo">
+              <div class="channel-header">
+                <span class="channel-icon">💙</span>
+                <span class="channel-name">Zalo</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="zalo"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Bot Token</label>
+                  <input class="form-input channel-field" data-channel="zalo" data-field="token" type="password" placeholder="Zalo Bot Token" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="wecom">
+              <div class="channel-header">
+                <span class="channel-icon">🏢</span>
+                <span class="channel-name">企业微信 (WeCom)</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="wecom"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Corp Secret</label>
+                  <input class="form-input channel-field" data-channel="wecom" data-field="token" type="password" placeholder="企业微信 Corp Secret" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="openclaw-weixin">
+              <div class="channel-header">
+                <span class="channel-icon">💚</span>
+                <span class="channel-name">微信 (WeChat)</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="openclaw-weixin"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Token</label>
+                  <input class="form-input channel-field" data-channel="openclaw-weixin" data-field="token" type="password" placeholder="微信 Token" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+
+            <div class="channel-card" data-channel="yuanbao">
+              <div class="channel-header">
+                <span class="channel-icon">🔮</span>
+                <span class="channel-name">元宝 (Yuanbao)</span>
+                <label class="toggle"><input type="checkbox" class="channel-toggle" data-channel="yuanbao"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="channel-fields" style="display:none;">
+                <div class="form-group">
+                  <label class="form-label">Token</label>
+                  <input class="form-input channel-field" data-channel="yuanbao" data-field="token" type="password" placeholder="腾讯元宝 Token" autocomplete="off"/>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="btn-group" style="flex:0 0 auto;">
+            <button class="btn btn-secondary" id="backToProvider">返回</button>
+            <button class="btn btn-primary" id="toSkills">下一步</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Skills -->
+        <div id="step-skills" class="setup-form" style="display:none;flex:1;min-height:0;flex-direction:column;">
+          <div style="flex:0 0 auto;">
+            <div class="form-section-title">技能</div>
+            <p class="form-hint" style="margin-bottom:10px;">选择要启用的技能，之后可在设置中随时开关。</p>
+          </div>
+
+          <div class="scroll-list">
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">1Password</span><span class="skill-desc">密码管理器集成</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="1password"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Apple Notes</span><span class="skill-desc">Apple 备忘录读写与搜索</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="apple-notes"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Apple Reminders</span><span class="skill-desc">Apple 提醒事项管理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="apple-reminders"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Bear Notes</span><span class="skill-desc">Bear 笔记应用集成</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="bear-notes"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Blog Watcher</span><span class="skill-desc">博客订阅与监控</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="blogwatcher"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Blucli</span><span class="skill-desc">蓝牙设备控制</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="blucli"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">CamSnap</span><span class="skill-desc">摄像头抓拍与截图</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="camsnap"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">ClawHub</span><span class="skill-desc">OpenClaw 插件市场</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="clawhub"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Coding Agent</span><span class="skill-desc">代码编写与调试代理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="coding-agent"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Diagram Maker</span><span class="skill-desc">图表与流程图生成</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="diagram-maker"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Eightctl</span><span class="skill-desc">8Sleep 床垫控制</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="eightctl"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Gemini</span><span class="skill-desc">Google Gemini 模型集成</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="gemini"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">GitHub</span><span class="skill-desc">Issues、PR、CI/CD 管理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="github"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">GitHub Issues</span><span class="skill-desc">自动修复 GitHub Issues</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="gh-issues"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">GIF Grep</span><span class="skill-desc">GIF 搜索与发送</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="gifgrep"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">GOG</span><span class="skill-desc">GOG 游戏平台集成</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="gog"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Go Places</span><span class="skill-desc">地点搜索与导航</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="goplaces"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Healthcheck</span><span class="skill-desc">系统健康检查</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="healthcheck"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Himalaya</span><span class="skill-desc">邮件客户端集成</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="himalaya"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">iMessage</span><span class="skill-desc">iMessage 消息收发</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="imsg"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">MC Porter</span><span class="skill-desc">Minecraft 服务器控制</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="mcporter"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Meme Maker</span><span class="skill-desc">表情包生成</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="meme-maker"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Model Usage</span><span class="skill-desc">模型用量统计</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="model-usage"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Nano PDF</span><span class="skill-desc">PDF 读取与处理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="nano-pdf"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Node Connect</span><span class="skill-desc">Node.js 项目管理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="node-connect"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Node Inspect Debugger</span><span class="skill-desc">Node.js 调试器</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="node-inspect-debugger"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Notion</span><span class="skill-desc">页面、数据库、搜索</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="notion"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Obsidian</span><span class="skill-desc">笔记、搜索、任务管理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="obsidian"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">OpenAI Whisper</span><span class="skill-desc">语音转文字（本地）</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="openai-whisper"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">OpenAI Whisper API</span><span class="skill-desc">语音转文字（API）</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="openai-whisper-api"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">OpenHue</span><span class="skill-desc">Philips Hue 灯光控制</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="openhue"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Oracle</span><span class="skill-desc">Oracle 数据库查询</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="oracle"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Order CLI</span><span class="skill-desc">订单管理命令行工具</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="ordercli"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Peekaboo</span><span class="skill-desc">屏幕截图与监控</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="peekaboo"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Python Debugpy</span><span class="skill-desc">Python 调试器</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="python-debugpy"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Sag</span><span class="skill-desc">截图与标注工具</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="sag"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Session Logs</span><span class="skill-desc">会话日志查看</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="session-logs"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Sherpa ONNX TTS</span><span class="skill-desc">本地文字转语音</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="sherpa-onnx-tts"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Skill Creator</span><span class="skill-desc">技能创建工具</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="skill-creator"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Songsee</span><span class="skill-desc">音乐识别</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="songsee"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Sonos CLI</span><span class="skill-desc">Sonos 音箱控制</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="sonoscli"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Spike</span><span class="skill-desc">血糖监测</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="spike"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Spotify Player</span><span class="skill-desc">Spotify 播放控制</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="spotify-player"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Summarize</span><span class="skill-desc">内容摘要生成</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="summarize"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Taskflow</span><span class="skill-desc">任务流管理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="taskflow"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Taskflow Inbox Triage</span><span class="skill-desc">收件箱分类整理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="taskflow-inbox-triage"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Things (Mac)</span><span class="skill-desc">Things 3 任务管理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="things-mac"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Tmux</span><span class="skill-desc">终端会话管理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="tmux"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Trello</span><span class="skill-desc">Trello 看板管理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="trello"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Video Frames</span><span class="skill-desc">视频帧提取与处理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="video-frames"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Weather</span><span class="skill-desc">天气查询与预报</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="weather"><span class="toggle-slider"></span></label></div>
+            <div class="skill-row"><div class="skill-info"><span class="skill-name">Xurl</span><span class="skill-desc">URL 处理与链接管理</span></div><label class="toggle"><input type="checkbox" class="skill-toggle" data-skill="xurl"><span class="toggle-slider"></span></label></div>
+          </div>
+
+          <div class="btn-group" style="flex:0 0 auto;">
+            <button class="btn btn-secondary" id="backToChannels">返回</button>
+            <button class="btn btn-primary" id="finishSetup">完成设置</button>
+          </div>
+        </div>
+
+        <!-- Step 4: Progress -->
         <div id="step-progress" class="setup-form" style="display:none;">
           <div class="progress-panel" role="status" aria-live="polite">
             <div class="status-row">
@@ -792,21 +1388,20 @@
           </div>
 
           <div class="steps-bar" aria-hidden="true">
-            <span id="step1">创建配置</span>
-            <span id="step2">初始化工作区</span>
-            <span id="step3">完成</span>
+            <span id="step1">初始化</span>
+            <span id="step2">提供商</span>
+            <span id="step3">频道</span>
+            <span id="step4">技能</span>
+            <span id="step5">完成</span>
           </div>
         </div>
 
-        <!-- Step 3: Done -->
+        <!-- Step 5: Done -->
         <div id="step-done" class="setup-form" style="display:none;">
-          <div class="status-panel">
-            <div class="status-row">
-              <span class="status-dot status-dot--success"></span>
-              <span class="status-text">初始化完成！</span>
-            </div>
+          <div class="form-section">
+            <div class="form-section-title">初始化完成</div>
+            <p class="form-hint">正在启动网关，请稍候...</p>
           </div>
-          <p class="subtitle" style="margin-top:16px;">正在启动网关，请稍候...</p>
         </div>
 
         <!-- Error -->
@@ -834,11 +1429,13 @@
     <script>
       const $ = (id) => document.getElementById(id);
 
+      // Step navigation
+      const allSteps = ['form', 'channels', 'skills', 'progress', 'done', 'error'];
       function showStep(step) {
-        $('step-form').style.display = step === 'form' ? '' : 'none';
-        $('step-progress').style.display = step === 'progress' ? '' : 'none';
-        $('step-done').style.display = step === 'done' ? '' : 'none';
-        $('step-error').style.display = step === 'error' ? '' : 'none';
+        for (const s of allSteps) {
+          const el = $('step-' + s);
+          if (el) el.style.display = s === step ? '' : 'none';
+        }
       }
 
       function setStatus(text, detail, dotClass) {
@@ -850,11 +1447,20 @@
       }
 
       function setActiveStep(n) {
-        for (let i = 1; i <= 3; i++) {
+        for (let i = 1; i <= 5; i++) {
           const el = $('step' + i);
-          el.className = i <= n ? 'step-active' : '';
+          if (el) el.className = i <= n ? 'step-active' : '';
         }
       }
+
+      // Channel toggle expand/collapse
+      document.querySelectorAll('.channel-toggle').forEach(toggle => {
+        toggle.addEventListener('change', () => {
+          const card = toggle.closest('.channel-card');
+          const fields = card.querySelector('.channel-fields');
+          if (fields) fields.style.display = toggle.checked ? '' : 'none';
+        });
+      });
 
       function buildArgs() {
         const args = ['setup', '--baseline'];
@@ -869,6 +1475,27 @@
         if (skipSkills) args.push('--skip-skills');
 
         return args;
+      }
+
+      function collectChannelConfig() {
+        const config = {};
+        document.querySelectorAll('.channel-toggle').forEach(toggle => {
+          if (!toggle.checked) return;
+          const ch = toggle.dataset.channel;
+          config[ch] = { enabled: true };
+          document.querySelectorAll(`.channel-field[data-channel="${ch}"]`).forEach(field => {
+            if (field.value.trim()) config[ch][field.dataset.field] = field.value.trim();
+          });
+        });
+        return config;
+      }
+
+      function collectSkillConfig() {
+        const enabled = [];
+        document.querySelectorAll('.skill-toggle').forEach(toggle => {
+          if (toggle.checked) enabled.push(toggle.dataset.skill);
+        });
+        return enabled;
       }
 
       async function runSetup() {
@@ -889,7 +1516,7 @@
             return;
           }
 
-          // Step 2: Write provider config if API key was entered
+          // Write provider config
           setActiveStep(2);
           const apiKey = $('apiKey').value.trim();
           const provider = $('provider').value;
@@ -905,14 +1532,41 @@
             }
           }
 
-          // Done
+          // Write channel config
           setActiveStep(3);
+          const channels = collectChannelConfig();
+          if (Object.keys(channels).length > 0) {
+            setStatus('正在配置频道...', '', 'status-dot--active');
+            const chResult = await window.electronAPI.writeChannelConfig(channels);
+            if (!chResult.success) {
+              $('errorDetail').textContent = '提供商配置完成，但写入频道配置失败：' + (chResult.error || '未知错误');
+              $('errorTitle').textContent = '频道配置失败';
+              showStep('error');
+              return;
+            }
+          }
+
+          // Write skill config
+          setActiveStep(4);
+          setStatus('正在配置技能...', '', 'status-dot--active');
+          const skills = collectSkillConfig();
+          if (skills.length > 0) {
+            const skResult = await window.electronAPI.writeSkillConfig(skills);
+            if (!skResult.success) {
+              $('errorDetail').textContent = '频道配置完成，但写入技能配置失败：' + (skResult.error || '未知错误');
+              $('errorTitle').textContent = '技能配置失败';
+              showStep('error');
+              return;
+            }
+          }
+
+          // Done
+          setActiveStep(5);
           setStatus('初始化完成！', '', 'status-dot--success');
           $('progressBar').style.display = 'none';
           showStep('done');
-          setTimeout(() => {
-            window.electronAPI.notifySetupComplete();
-          }, 1500);
+          // Tell main process to start gateway and load loading page
+          window.electronAPI.notifySetupComplete();
         } catch (err) {
           $('progressBar').style.display = 'none';
           const detail = err.message || String(err);
@@ -922,15 +1576,18 @@
         }
       }
 
-      $('setupBtn').addEventListener('click', runSetup);
-      $('retryBtn').addEventListener('click', () => {
-        showStep('form');
-      });
+      // Navigation buttons
+      $('setupBtn').addEventListener('click', () => showStep('channels'));
+      $('backToProvider').addEventListener('click', () => showStep('form'));
+      $('toSkills').addEventListener('click', () => showStep('skills'));
+      $('backToChannels').addEventListener('click', () => showStep('channels'));
+      $('finishSetup').addEventListener('click', runSetup);
+      $('retryBtn').addEventListener('click', () => showStep('form'));
       $('quitBtn').addEventListener('click', () => window.electronAPI.quitApp());
       $('quitBtn2').addEventListener('click', () => window.electronAPI.quitApp());
 
       $('apiKey').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') runSetup();
+        if (e.key === 'Enter') showStep('channels');
       });
 
       $('copyErrorBtn').addEventListener('click', async () => {
@@ -945,7 +1602,6 @@
             btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 11V3.5A.5.5 0 0 1 3.5 3H11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
           }, 2000);
         } catch {
-          // Fallback
           const range = document.createRange();
           range.selectNodeContents($('errorDetail'));
           const sel = window.getSelection();

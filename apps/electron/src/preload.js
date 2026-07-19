@@ -29,6 +29,12 @@ const electronAPI = {
   /** Write provider config directly to openclaw.json. */
   writeProviderConfig: (provider, apiKey) => ipcRenderer.invoke("write-provider-config", { provider, apiKey }),
 
+  /** Write channel config to openclaw.json. */
+  writeChannelConfig: (channels) => ipcRenderer.invoke("write-channel-config", channels),
+
+  /** Write skill config to openclaw.json. */
+  writeSkillConfig: (skills) => ipcRenderer.invoke("write-skill-config", skills),
+
   /** Notify that setup is complete. */
   notifySetupComplete: () => ipcRenderer.send("setup-complete"),
 
