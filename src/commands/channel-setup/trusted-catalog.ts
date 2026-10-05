@@ -1,4 +1,5 @@
 // Trusted channel catalog helpers that hide unenabled workspace-shadowed entries.
+import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import {
   getChannelPluginCatalogEntry,
   listRawChannelPluginCatalogEntries,
@@ -6,6 +7,7 @@ import {
 } from "../../channels/plugins/catalog.js";
 import { applyPluginAutoEnable } from "../../config/plugin-auto-enable.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { PluginInstallRecord } from "../../config/types.plugins.js";
 import {
   normalizePluginsConfig,
   resolveEffectivePluginActivationState,
@@ -16,6 +18,14 @@ import {
   resolveManifestOwnerBasePolicyBlock,
 } from "../../plugins/manifest-owner-policy.js";
 import type { PluginOrigin } from "../../plugins/plugin-origin.types.js";
+
+type TrustedChannelCatalogOptions = {
+  cfg: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  discovery?: PluginDiscoveryResult;
+  installRecords?: Record<string, PluginInstallRecord>;
+};
 
 const LOCAL_CHANNEL_PLUGIN_ORIGINS = ["workspace", "config", "global"] as const;
 
@@ -35,13 +45,6 @@ function isLocalChannelPluginOrigin(
   return origin !== undefined && LOCAL_CHANNEL_PLUGIN_ORIGIN_SET.has(origin);
 }
 
-function resolveEffectiveTrustConfig(cfg: OpenClawConfig, env?: NodeJS.ProcessEnv): OpenClawConfig {
-  return applyPluginAutoEnable({
-    config: cfg,
-    env: env ?? process.env,
-  }).config;
-}
-
 function resolveTrustedCatalogExtraPaths(cfg: OpenClawConfig): string[] | undefined {
   const extraPaths = normalizePluginsConfig(cfg.plugins).loadPaths;
   return extraPaths.length > 0 ? extraPaths : undefined;
@@ -58,7 +61,7 @@ function isTrustedLocalChannelCatalogEntry(
   if (!entry.pluginId) {
     return false;
   }
-  const effectiveConfig = resolveEffectiveTrustConfig(cfg, env);
+  const effectiveConfig = applyPluginAutoEnable({ config: cfg, env: env ?? process.env }).config;
   const normalizedPlugins = normalizePluginsConfig(effectiveConfig.plugins);
   if (
     resolveManifestOwnerBasePolicyBlock({
@@ -119,14 +122,10 @@ function resolveRejectedCatalogEntryKey(entry: ChannelPluginCatalogEntry): strin
   return isLocalChannelPluginOrigin(entry.origin) ? `origin:${entry.origin}` : null;
 }
 
-function resolveTrustedCatalogEntry(
+/** Resolve a catalog entry, falling back to non-workspace metadata when workspace entry is untrusted. */
+export function getTrustedChannelPluginCatalogEntry(
   channelId: string,
-  params: {
-    cfg: OpenClawConfig;
-    workspaceDir?: string;
-    env?: NodeJS.ProcessEnv;
-    discovery?: PluginDiscoveryResult;
-  },
+  params: TrustedChannelCatalogOptions,
   rejected: ChannelPluginCatalogEntry[] = [],
 ): ChannelPluginCatalogEntry | undefined {
   const extraPaths = resolveTrustedCatalogExtraPaths(params.cfg);
@@ -144,6 +143,7 @@ function resolveTrustedCatalogEntry(
       env: params.env,
       ...(extraPaths ? { extraPaths } : {}),
       ...(params.discovery ? { discovery: params.discovery } : {}),
+      ...(params.installRecords ? { installRecords: params.installRecords } : {}),
       ...resolveRejectedCatalogLookup(rejectedEntries),
     });
     if (!candidate) {
@@ -167,26 +167,8 @@ function resolveTrustedCatalogEntry(
   return undefined;
 }
 
-/** Resolve a catalog entry, falling back to non-workspace metadata when workspace entry is untrusted. */
-export function getTrustedChannelPluginCatalogEntry(
-  channelId: string,
-  params: {
-    cfg: OpenClawConfig;
-    workspaceDir?: string;
-    env?: NodeJS.ProcessEnv;
-    discovery?: PluginDiscoveryResult;
-  },
-): ChannelPluginCatalogEntry | undefined {
-  return resolveTrustedCatalogEntry(channelId, params);
-}
-
 function listChannelPluginCatalogEntriesWithTrustedFallback(
-  params: {
-    cfg: OpenClawConfig;
-    workspaceDir?: string;
-    env?: NodeJS.ProcessEnv;
-    discovery?: PluginDiscoveryResult;
-  },
+  params: TrustedChannelCatalogOptions,
   onMissingFallback: (entry: ChannelPluginCatalogEntry) => ChannelPluginCatalogEntry[],
 ): ChannelPluginCatalogEntry[] {
   const extraPaths = resolveTrustedCatalogExtraPaths(params.cfg);
@@ -195,32 +177,45 @@ function listChannelPluginCatalogEntriesWithTrustedFallback(
     env: params.env,
     ...(extraPaths ? { extraPaths } : {}),
     ...(params.discovery ? { discovery: params.discovery } : {}),
+    ...(params.installRecords ? { installRecords: params.installRecords } : {}),
   });
   return unfiltered.flatMap((entry) => {
     if (isTrustedLocalChannelCatalogEntry(entry, params.cfg, params.env)) {
       return [entry];
     }
-    const fallback = resolveTrustedCatalogEntry(entry.id, params, [entry]);
+    const fallback = getTrustedChannelPluginCatalogEntry(entry.id, params, [entry]);
     return fallback ? [fallback] : onMissingFallback(entry);
   });
 }
 
 /** List trusted catalog entries, dropping untrusted workspace-only shadows. */
-export function listTrustedChannelPluginCatalogEntries(params: {
-  cfg: OpenClawConfig;
-  workspaceDir?: string;
-  env?: NodeJS.ProcessEnv;
-  discovery?: PluginDiscoveryResult;
-}): ChannelPluginCatalogEntry[] {
+export function listTrustedChannelPluginCatalogEntries(
+  params: TrustedChannelCatalogOptions,
+): ChannelPluginCatalogEntry[] {
   return listChannelPluginCatalogEntriesWithTrustedFallback(params, () => []);
 }
 
 /** List setup discovery entries, preserving untrusted workspace-only entries for install prompts. */
-export function listSetupDiscoveryChannelPluginCatalogEntries(params: {
-  cfg: OpenClawConfig;
-  workspaceDir?: string;
-  env?: NodeJS.ProcessEnv;
-  discovery?: PluginDiscoveryResult;
-}): ChannelPluginCatalogEntry[] {
+export function listSetupDiscoveryChannelPluginCatalogEntries(
+  params: TrustedChannelCatalogOptions,
+): ChannelPluginCatalogEntry[] {
   return listChannelPluginCatalogEntriesWithTrustedFallback(params, (entry) => [entry]);
+}
+
+/** Resolve a channel id or alias in trusted catalog order. */
+export function resolveTrustedChannelCatalogInput(
+  raw: string,
+  params: TrustedChannelCatalogOptions,
+): ChannelPluginCatalogEntry | undefined {
+  const normalized = normalizeOptionalLowercaseString(raw);
+  if (!normalized) {
+    return undefined;
+  }
+  return listTrustedChannelPluginCatalogEntries(params).find(
+    (entry) =>
+      normalizeOptionalLowercaseString(entry.id) === normalized ||
+      (entry.meta.aliases ?? []).some(
+        (alias) => normalizeOptionalLowercaseString(alias) === normalized,
+      ),
+  );
 }

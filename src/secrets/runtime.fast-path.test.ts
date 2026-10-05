@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthProfileStore } from "../agents/auth-profiles.js";
+import { createAuthProfileStoreFixture } from "../agents/auth-profiles/credential-fixtures.test-support.js";
 import { resolveLegacyOAuthPath } from "../agents/auth-profiles/legacy-source-diagnostic.js";
 import { saveAuthProfileStore } from "../agents/auth-profiles/store-runtime.js";
 import { clearConfigCache, clearRuntimeConfigSnapshot } from "../config/config.js";
@@ -32,7 +33,7 @@ const { collectConfigAssignmentsMock, resolveRuntimeWebToolsMock, runtimePrepare
   }));
 
 function explicitMainRoster() {
-  return { agents: { list: [{ id: "main" }] } };
+  return { agents: { entries: { main: {} } } };
 }
 
 vi.mock("./runtime-prepare.runtime.js", () => {
@@ -86,16 +87,13 @@ function requireGatewayAuth(
 function writeAuthProfileStore(agentDir: string): void {
   mkdirSync(agentDir, { recursive: true });
   saveAuthProfileStore(
-    {
-      version: 1,
-      profiles: {
-        "openai:default": {
-          type: "api_key",
-          provider: "openai",
-          key: "sk-test",
-        },
+    createAuthProfileStoreFixture({
+      "openai:default": {
+        type: "api_key",
+        provider: "openai",
+        key: "sk-test",
       },
-    },
+    }),
     agentDir,
     { filterExternalAuthProfiles: false, syncExternalCli: false },
   );
@@ -202,16 +200,14 @@ describe("secrets runtime fast path", () => {
       config: asConfig(explicitMainRoster()),
       env: {},
       agentDirs: ["/tmp/openclaw-agent-main"],
-      loadAuthStore: () => ({
-        version: 1,
-        profiles: {
+      loadAuthStore: () =>
+        createAuthProfileStoreFixture({
           "openai:default": {
             type: "api_key",
             provider: "openai",
             keyRef: { source: "env", provider: "default", id: "OPENAI_API_KEY" },
           },
-        },
-      }),
+        }),
     });
 
     expect(resolveRuntimeWebToolsMock).toHaveBeenCalledTimes(1);
@@ -316,7 +312,7 @@ describe("secrets runtime fast path", () => {
       const snapshot = prepareSecretsRuntimeFastPathSnapshot({
         config: asConfig({
           agents: {
-            list: [{ id: "main", agentDir }],
+            entries: { main: { agentDir } },
           },
         }),
         env,
@@ -369,7 +365,7 @@ describe("secrets runtime fast path", () => {
       const fastPath = prepareSecretsRuntimeFastPathSnapshot({
         config: asConfig({
           agents: {
-            list: [{ id: "main", agentDir }],
+            entries: { main: { agentDir } },
           },
         }),
         env,
@@ -415,7 +411,7 @@ describe("secrets runtime fast path", () => {
     };
     const config = (port: number) =>
       asConfig({
-        agents: { list: [{ id: "main", agentDir }] },
+        agents: { entries: { main: { agentDir } } },
         gateway: { port },
       });
     const initialSnapshot = await prepareSecretsRuntimeSnapshot({
@@ -446,18 +442,12 @@ describe("secrets runtime fast path", () => {
       refreshActiveProviderAuthRuntimeSnapshot,
     } = await import("./runtime.js");
     const agentDir = "/tmp/openclaw-agent-auth-store-refresh-cas";
-    const oldStore: AuthProfileStore = {
-      version: 1,
-      profiles: {
-        "openai:default": { type: "api_key", provider: "openai", key: "sk-old" },
-      },
-    };
-    const newStore: AuthProfileStore = {
-      version: 1,
-      profiles: {
-        "openai:default": { type: "api_key", provider: "openai", key: "sk-new" },
-      },
-    };
+    const oldStore: AuthProfileStore = createAuthProfileStoreFixture({
+      "openai:default": { type: "api_key", provider: "openai", key: "sk-old" },
+    });
+    const newStore: AuthProfileStore = createAuthProfileStoreFixture({
+      "openai:default": { type: "api_key", provider: "openai", key: "sk-new" },
+    });
     let mutateDuringRefresh = false;
     const loadAuthStore = () => {
       if (mutateDuringRefresh) {
@@ -469,7 +459,7 @@ describe("secrets runtime fast path", () => {
     };
     const initial = await prepareSecretsRuntimeSnapshot({
       config: asConfig({
-        agents: { list: [{ id: "main", agentDir }] },
+        agents: { entries: { main: { agentDir } } },
       }),
       agentDirs: [agentDir],
       loadAuthStore,
@@ -498,15 +488,13 @@ describe("secrets runtime fast path", () => {
       prepareSecretsRuntimeSnapshot,
     } = await import("./runtime.js");
     const agentDir = "/tmp/openclaw-agent-preflight-cas";
-    const authStore = (key: string): AuthProfileStore => ({
-      version: 1,
-      profiles: {
+    const authStore = (key: string): AuthProfileStore =>
+      createAuthProfileStoreFixture({
         "openai:default": { type: "api_key", provider: "openai", key },
-      },
-    });
+      });
     const config = (port: number) =>
       asConfig({
-        agents: { list: [{ id: "main", agentDir }] },
+        agents: { entries: { main: { agentDir } } },
         gateway: { port },
       });
     const initial = await prepareSecretsRuntimeSnapshot({
@@ -556,7 +544,7 @@ describe("secrets runtime fast path", () => {
       const fastPath = prepareSecretsRuntimeFastPathSnapshot({
         config: asConfig({
           agents: {
-            list: [{ id: "main", agentDir }],
+            entries: { main: { agentDir } },
           },
         }),
         env,

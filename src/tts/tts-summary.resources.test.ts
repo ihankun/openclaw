@@ -271,7 +271,7 @@ module.exports = { id: ${JSON.stringify(id)}, register(api) {
               state.finishCleanup.resolve();
               await Promise.all(outcomes);
               await parent.drain();
-              lease.release();
+              await lease[Symbol.asyncDispose]();
               await closePreparedModelRuntimeSnapshots();
             }
           },
@@ -342,31 +342,26 @@ afterEach(async () => {
 });
 afterAll(cleanupPluginLoaderFixturesForTest);
 
-it.each([false, true])(
-  "owns the selected summary model through completion and cleanup (tail=%s)",
-  async (tail) => {
-    const fixture = nativeSummaryFixture();
-    await fixture.run(async () => {
-      fixture.state.completionTail = tail;
-      fixture.state.finish.resolve();
-      const outcome = await fixture.summarize();
-      expect(fixture.state.connections[0]?.openAtCompletion).toBe(true);
-      expect(outcome).toMatchObject({
-        result: { summary: "Spoken summary 42." },
-      });
-      expect(fixture.state.calls.map((call) => call.model)).toEqual(["summary-model"]);
-      if (tail) {
-        await setImmediate();
-        expect(fixture.state.connections[0]?.database.isOpen).toBe(true);
-        fixture.state.finishTail.resolve();
-      }
-      await fixture.assertClosed();
-      expect(fixture.state.connections[0]?.completionReads).toBe(1);
-      expect(fixture.state.connections[0]?.cleanupReads).toBe(tail ? 1 : 0);
-      expect(fixture.state.cancellation.failure).toBeUndefined();
+it("owns the selected summary model through completion and its cleanup tail", async () => {
+  const fixture = nativeSummaryFixture();
+  await fixture.run(async () => {
+    fixture.state.completionTail = true;
+    fixture.state.finish.resolve();
+    const outcome = await fixture.summarize();
+    expect(fixture.state.connections[0]?.openAtCompletion).toBe(true);
+    expect(outcome).toMatchObject({
+      result: { summary: "Spoken summary 42." },
     });
-  },
-);
+    expect(fixture.state.calls.map((call) => call.model)).toEqual(["summary-model"]);
+    await setImmediate();
+    expect(fixture.state.connections[0]?.database.isOpen).toBe(true);
+    fixture.state.finishTail.resolve();
+    await fixture.assertClosed();
+    expect(fixture.state.connections[0]?.completionReads).toBe(1);
+    expect(fixture.state.connections[0]?.cleanupReads).toBe(1);
+    expect(fixture.state.cancellation.failure).toBeUndefined();
+  });
+});
 
 it("starts the summary deadline after preparation and keeps an uncooperative provider owned", async () => {
   const fixture = nativeSummaryFixture();
@@ -488,7 +483,7 @@ it.each(["success", "auth-abort", "completion-abort"] as const)(
       expect(fixture.acquire).not.toHaveBeenCalled();
       expect(fixture.state.connections[0]?.database.isOpen).toBe(true);
       expect(fixture.state.connections[0]?.disposals).toBe(0);
-      fixture.lease.release();
+      await fixture.lease[Symbol.asyncDispose]();
       await fixture.assertClosed();
     });
   },

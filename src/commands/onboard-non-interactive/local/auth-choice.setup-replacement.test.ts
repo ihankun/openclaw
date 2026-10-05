@@ -51,7 +51,7 @@ it.each([true, false])(
     await upsertAuthProfileWithLock({ profileId: "openai:default", credential: working, agentDir });
     const config: OpenClawConfig = {
       agents: {
-        entries: { main: { default: true } },
+        entries: { main: {} },
         defaults: { model: "openai/test-model@openai:default" },
       },
     };
@@ -117,6 +117,9 @@ it.each([true, false])(
         }),
       }),
     ]);
-    expect(runtime.error.mock.calls.flat().join("\n")).toContain("saved but inactive");
+    const savedProfileId = Object.keys(store.profiles).find((id) => id !== "openai:default");
+    expect(runtime.error.mock.calls.flat().join("\n")).toContain(
+      `openclaw models auth activate ${savedProfileId} --agent main`,
+    );
   },
 );

@@ -1,6 +1,6 @@
 {
   "id": "openrouter",
-  "categories": ["models", "voice", "media"],
+  "categories": ["models"],
   "capabilityCatalogEntry": "./capability-catalog.ts",
   "activation": {
     "onStartup": false
@@ -23,8 +23,9 @@
     "providers": {
       "openrouter": {
         "openRouter": {
-          "passthroughProviderModel": true
+          "provider": "openrouter"
         },
+        "modelsDev": false,
         "liteLLM": false
       }
     }

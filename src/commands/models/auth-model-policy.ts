@@ -12,9 +12,10 @@ import { parseModelPolicyWildcardRef } from "../../config/model-policy-ref.js";
 import {
   attachRuntimeConfigWriteApplication,
   createRuntimeConfigWriteApplication,
+  type RuntimeConfigWriteApplicationStatus,
 } from "../../config/runtime-write-application.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { applyDefaultModel } from "../../plugins/provider-auth-choice-helpers.js";
+import { applyPrimaryModel } from "../../plugins/provider-model-primary.js";
 import { captureGatewayRootWorkAdmissionContinuationScope } from "../../process/gateway-work-admission.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import type { WizardPrompter, WizardSelectParams } from "../../wizard/prompts.js";
@@ -22,11 +23,21 @@ import { resolveModelsTargetAgent, updateConfig } from "./shared.js";
 
 type ModelAccessChoice = "all" | "keep";
 
+type ProviderModelAccessOutcome =
+  | { kind: "unchanged" | "deferred"; message: string }
+  | { kind: "saved"; application: RuntimeConfigWriteApplicationStatus; message: string };
+
+export class ProviderModelPolicyChangedError extends Error {
+  constructor(readonly config: OpenClawConfig) {
+    super("Model restrictions changed during sign-in. Choose model access again.");
+  }
+}
+
 export function applyProviderLoginDefaultModel(
   config: OpenClawConfig,
   model: string,
 ): OpenClawConfig {
-  const next = applyDefaultModel(config, model);
+  const next = applyPrimaryModel(config, model);
   if (
     resolveConfiguredModelPolicyAllow({ cfg: config }).configPath ===
     LEGACY_MODEL_POLICY_ALLOW_CONFIG_PATH
@@ -53,10 +64,7 @@ export function withoutProviderModelPolicy(
       delete connection.agents.defaults.models;
     }
   }
-  for (const agent of [
-    ...Object.values(connection.agents?.entries ?? {}),
-    ...(connection.agents?.list ?? []),
-  ]) {
+  for (const agent of Object.values(connection.agents?.entries ?? {})) {
     delete agent.modelPolicy;
   }
   return connection;
@@ -89,7 +97,7 @@ export function prepareProviderModelAccess(params: {
     return undefined;
   }
   const prompt: WizardSelectParams<ModelAccessChoice> = {
-    message: `Credentials saved. Your current model restrictions may hide ${params.providerLabel} models.`,
+    message: `Your current model restrictions may hide ${params.providerLabel} models. Choose which models to show.`,
     initialValue: "keep",
     options: [
       { value: "all", label: `Show all ${params.providerLabel} models` },
@@ -106,21 +114,21 @@ export async function completeProviderModelAccess(params: {
   assertCurrent?: (config?: OpenClawConfig) => void;
   onRequested?: (request: PreparedProviderModelAccess) => void;
   beforeCommit?: () => void;
-}): Promise<string> {
+}): Promise<ProviderModelAccessOutcome> {
   const prepared = params.prepared;
   if (!prepared) {
-    return "";
+    return { kind: "unchanged", message: "" };
   }
   params.assertCurrent?.();
   if (params.onRequested) {
     params.onRequested(prepared);
-    return "";
+    return { kind: "deferred", message: "" };
   }
   const choice = await params.prompter.select(prepared.prompt);
   params.assertCurrent?.();
   if (choice !== "all") {
-    params.runtime.log("Credentials saved. Current model restrictions kept.");
-    return "Current model restrictions kept.";
+    params.runtime.log("Current model restrictions kept.");
+    return { kind: "unchanged", message: "Current model restrictions kept." };
   }
   const application = createRuntimeConfigWriteApplication(
     captureGatewayRootWorkAdmissionContinuationScope()?.run,
@@ -130,7 +138,7 @@ export async function completeProviderModelAccess(params: {
       params.assertCurrent?.(config);
       resolveModelsTargetAgent(config, prepared.agentId, { kind: "mutation" });
       if (!isDeepStrictEqual(snapshotPolicy(config, prepared.agentId), prepared.policy)) {
-        throw new Error("Model restrictions changed during sign-in. Choose model access again.");
+        throw new ProviderModelPolicyChangedError(config);
       }
       const policy = resolveConfiguredModelPolicyAllow({ cfg: config, agentId: prepared.agentId });
       const allow = [...policy.refs, `${prepared.provider}/*`];
@@ -156,21 +164,19 @@ export async function completeProviderModelAccess(params: {
       return config;
     },
     undefined,
-    () => {
-      params.assertCurrent?.();
-      params.beforeCommit?.();
-    },
-    attachRuntimeConfigWriteApplication({}, application),
+    params.beforeCommit,
+    attachRuntimeConfigWriteApplication({ assertCurrent: params.assertCurrent }, application),
   );
-  if (application.claimed && (await application.result) !== "applied") {
-    throw new Error("The running Gateway did not apply the saved model restrictions.");
-  }
+  const status = application.claimed ? await application.result : "unclaimed";
   logConfigUpdated(params.runtime);
-  const message = application.claimed
-    ? `All ${prepared.providerLabel} models are now visible.`
-    : "Model access saved. Application by the running Gateway is not confirmed. Run `openclaw gateway restart` to apply it.";
-  params.runtime.log(`Credentials saved. ${message}`);
-  return message;
+  const message =
+    status === "applied"
+      ? `All ${prepared.providerLabel} models are now visible.`
+      : application.claimed
+        ? "Model access was saved, but OpenClaw has not confirmed it is active. Open Settings and select Apply changes, then send /models."
+        : "Model access saved. Application by the running Gateway is not confirmed. Run `openclaw gateway restart` to apply it.";
+  params.runtime.log(message);
+  return { kind: "saved", application: status, message };
 }
 
 export type PreparedProviderModelAccess = NonNullable<

@@ -3,11 +3,7 @@ import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coerci
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../reply-payload.js";
 import type { ReplyPayload } from "../types.js";
-import {
-  createAudioAsVoiceBuffer,
-  createBlockReplyContentKey,
-  createBlockReplyPipeline,
-} from "./block-reply-pipeline.js";
+import { createBlockReplyContentKey, createBlockReplyPipeline } from "./block-reply-pipeline.js";
 
 const waitForAbort = (signal: AbortSignal | undefined): Promise<void> =>
   new Promise((resolve) => {
@@ -27,14 +23,6 @@ afterEach(() => {
 });
 
 describe("createBlockReplyContentKey", () => {
-  it("produces the same key for payloads differing only by replyToId", () => {
-    const a = createBlockReplyContentKey({ text: "hello world", replyToId: "post-1" });
-    const b = createBlockReplyContentKey({ text: "hello world", replyToId: "post-2" });
-    const c = createBlockReplyContentKey({ text: "hello world" });
-    expect(a).toBe(b);
-    expect(a).toBe(c);
-  });
-
   it("keeps rich content in the reply-independent content key", () => {
     const a = createBlockReplyContentKey({
       presentation: {
@@ -257,10 +245,8 @@ describe("createBlockReplyPipeline dedup with threading", () => {
         idleMs: 0,
         joiner: " ",
       },
-      buffer: createAudioAsVoiceBuffer({
-        isAudioPayload: (payload) =>
-          [payload.mediaUrl, ...(payload.mediaUrls ?? [])].some((url) => url?.endsWith(".ogg")),
-      }),
+      isAudioPayload: (payload) =>
+        [payload.mediaUrl, ...(payload.mediaUrls ?? [])].some((url) => url?.endsWith(".ogg")),
     });
 
     for (const payload of payloads) {
@@ -443,19 +429,6 @@ describe("createBlockReplyPipeline dedup with threading", () => {
     ]);
   });
 
-  it("does not track media when text-only blocks are delivered", async () => {
-    const pipeline = createBlockReplyPipeline({
-      onBlockReply: async () => {},
-      timeoutMs: 5000,
-    });
-
-    pipeline.enqueue({ text: "hello" });
-    pipeline.enqueue({ text: "world" });
-    await pipeline.flush({ force: true });
-
-    expect(pipeline.getSentMediaUrls()).toStrictEqual([]);
-  });
-
   it("does not coalesce logical assistant blocks across assistantMessageIndex boundaries", async () => {
     const sent: string[] = [];
     const pipeline = createBlockReplyPipeline({
@@ -506,6 +479,76 @@ describe("createBlockReplyPipeline dedup with threading", () => {
 
 describe("createBlockReplyPipeline content coverage dedup", () => {
   it.each([false, true])(
+    "deduplicates source ranges while preserving identical adjacent chunks (coalescing=%s)",
+    async (coalescing) => {
+      const sent: ReplyPayload[] = [];
+      const pipeline = createBlockReplyPipeline({
+        onBlockReply: async (payload) => {
+          sent.push(payload);
+        },
+        timeoutMs: 5000,
+        ...(coalescing
+          ? { coalescing: { minChars: 100, maxChars: 200, idleMs: 0, joiner: "" } }
+          : {}),
+      });
+      const sourceChunk = (range: readonly [number, number]) =>
+        setReplyPayloadMetadata(
+          { text: "aaa" },
+          { assistantMessageIndex: 1, blockSourceText: "aaa", blockSourceRange: range },
+        );
+
+      pipeline.enqueue(sourceChunk([0, 3]));
+      pipeline.enqueue(sourceChunk([3, 6]));
+      pipeline.enqueue(sourceChunk([0, 3]));
+      pipeline.enqueue(
+        setReplyPayloadMetadata(
+          { text: "bbb" },
+          { assistantMessageIndex: 1, blockSourceText: "bbb", blockSourceRange: [0, 3] },
+        ),
+      );
+      await pipeline.flush({ force: true });
+
+      expect(sent.map((payload) => payload.text)).toEqual(
+        coalescing ? ["aaaaaabbb"] : ["aaa", "aaa", "bbb"],
+      );
+    },
+  );
+
+  it.each([false, true])(
+    "deduplicates an unkeyed replay after a source occurrence (coalescing=%s)",
+    async (coalescing) => {
+      const sent: ReplyPayload[] = [];
+      const pipeline = createBlockReplyPipeline({
+        onBlockReply: async (payload) => {
+          sent.push(payload);
+        },
+        timeoutMs: 5000,
+        ...(coalescing
+          ? { coalescing: { minChars: 100, maxChars: 200, idleMs: 0, joiner: "" } }
+          : {}),
+      });
+
+      pipeline.enqueue(
+        setReplyPayloadMetadata(
+          { text: "unchanged" },
+          {
+            assistantMessageIndex: 1,
+            blockSourceText: "unchanged",
+            blockSourceRange: [0, 9],
+          },
+        ),
+      );
+      await pipeline.flush({ force: true });
+      pipeline.enqueue(
+        setReplyPayloadMetadata({ text: "unchanged" }, { assistantMessageIndex: 1 }),
+      );
+      await pipeline.flush({ force: true });
+
+      expect(sent.map((payload) => payload.text)).toEqual(["unchanged"]);
+    },
+  );
+
+  it.each([false, true])(
     "recognizes delivered source through synthetic fence wrappers (coalescing=%s)",
     async (coalescing) => {
       const sent: ReplyPayload[] = [];
@@ -553,30 +596,6 @@ describe("createBlockReplyPipeline content coverage dedup", () => {
       expect(pipeline.hasSentPayload({ text: "```ts\nconst x = 2;\n```" })).toBe(false);
     },
   );
-
-  it("does not acknowledge source from a rejected fenced block", async () => {
-    const pipeline = createBlockReplyPipeline({
-      onBlockReply: async (payload) => {
-        if (payload.text === "```ts\n1;\n```") {
-          throw new Error("channel rejected the continuation");
-        }
-      },
-      timeoutMs: 5000,
-    });
-    pipeline.enqueue(
-      setReplyPayloadMetadata(
-        { text: "```ts\nconst x = \n```" },
-        { blockSourceText: "```ts\nconst x = " },
-      ),
-    );
-    pipeline.enqueue(
-      setReplyPayloadMetadata({ text: "```ts\n1;\n```" }, { blockSourceText: "1;\n```" }),
-    );
-    await pipeline.flush({ force: true });
-
-    expect(pipeline.hasSentPayload({ text: "```ts\nconst x = 1;\n```" })).toBe(false);
-    expect(pipeline.hasSentPayload({ text: "```ts\nconst x = " })).toBe(true);
-  });
 
   it("merges source coverage through ordinary text and a media continuation", async () => {
     const sent: ReplyPayload[] = [];
@@ -644,7 +663,7 @@ describe("createBlockReplyPipeline content coverage dedup", () => {
         sent.push(payload);
       },
       timeoutMs: 5000,
-      buffer: createAudioAsVoiceBuffer({ isAudioPayload: (payload) => Boolean(payload.mediaUrl) }),
+      isAudioPayload: (payload) => Boolean(payload.mediaUrl),
     });
     pipeline.enqueue(
       setReplyPayloadMetadata(

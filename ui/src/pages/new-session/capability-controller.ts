@@ -15,14 +15,11 @@ import type { DraftGatewayState } from "./draft-gateway-state.ts";
 export class NewSessionCapabilityController {
   private readonly skillCatalog: ComposerSkillCatalog;
   private toolOverridesValue: SessionToolOverrides | null = null;
-  private onMutation = () => {};
-
-  constructor(private readonly notify: () => void) {
+  constructor(
+    private readonly notify: () => void,
+    private readonly onMutation: () => void,
+  ) {
     this.skillCatalog = new ComposerSkillCatalog(notify);
-  }
-
-  setMutationCallback(onMutation: () => void) {
-    this.onMutation = onMutation;
   }
 
   get toolOverrides(): SessionToolOverrides | null {
@@ -75,16 +72,13 @@ export class NewSessionCapabilityController {
   ): CapabilityMenuProps {
     this.skillCatalog.synchronize(gateway.client, gateway.connectionEpoch);
     const config = context.runtimeConfig.state;
-    if (!config.configSnapshot && !config.configLoading) {
-      void context.runtimeConfig.ensureLoaded().finally(this.notify);
-    }
     const runtimeConfig = config.configSnapshot?.runtimeConfig ?? null;
     const gatewayAvailable = gateway.connected && Boolean(gateway.client);
     const access = readGatewayOperatorAccess(context.gateway.snapshot);
     const mutationBlockedReason = !gatewayAvailable
       ? t("chat.composer.menu.offlineBlocked")
       : !runtimeConfig
-        ? t("common.loading")
+        ? (config.lastError ?? t("common.loading"))
         : !access.canAdmin
           ? t("chat.composer.menu.adminBlocked")
           : null;

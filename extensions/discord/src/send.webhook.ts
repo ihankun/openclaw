@@ -1,4 +1,3 @@
-// Discord plugin module implements send.webhook behavior.
 import { recordChannelActivity } from "openclaw/plugin-sdk/channel-activity-runtime";
 import { recordOutboundMessageIdentity } from "openclaw/plugin-sdk/channel-outbound";
 import type { MarkdownTableMode, OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
@@ -9,9 +8,10 @@ import {
   readResponseTextLimited,
 } from "openclaw/plugin-sdk/provider-http";
 import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
-import { truncateUtf16Safe } from "openclaw/plugin-sdk/text-utility-runtime";
 import { chunkDiscordTextWithMode } from "./chunk.js";
 import { resolveDiscordClientAccountContext } from "./client.js";
+import { getDiscordEndpointRuntime } from "./endpoint-runtime.js";
+import { parseDiscordHttpErrorBody } from "./error-body.js";
 import {
   DiscordError,
   RateLimitError,
@@ -49,22 +49,11 @@ type DiscordWebhookSendOpts = {
   tableMode?: MarkdownTableMode;
   wait?: boolean;
   /** Opt into configured line limits; omission preserves character-only chunking. */
-  chunking?: { maxLines?: number };
+  chunking?: { maxChars?: number; maxLines?: number };
   onPlatformSendDispatch?: () => Promise<void>;
   assertPlatformSendAuthorized?: () => void;
   onDeliveryResult?: (result: DiscordSendResult) => Promise<void> | void;
 };
-
-function coerceWebhookErrorBody(raw: string): unknown {
-  if (!raw) {
-    return undefined;
-  }
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return { message: truncateUtf16Safe(raw, 200) };
-  }
-}
 
 function throwIfWebhookDeadlineExpired(signal: AbortSignal | undefined): void {
   if (!signal?.aborted) {
@@ -87,7 +76,7 @@ async function throwWebhookResponseError(
     throwIfWebhookDeadlineExpired(signal);
     return "";
   });
-  const parsed = coerceWebhookErrorBody(raw);
+  const parsed = parseDiscordHttpErrorBody(raw);
   if (response.status === 429) {
     throw new RateLimitError(response, {
       message: readDiscordMessage(parsed, "Rate limited"),
@@ -120,10 +109,11 @@ export async function sendWebhookMessageDiscord(
     cfg: opts.cfg,
     accountId: opts.accountId,
   });
-  const { textWithMentions } = prepareDiscordOutboundText(text, {
+  const { textWithMentions, textLimit } = prepareDiscordOutboundText(text, {
     cfg: opts.cfg,
     account,
     tableMode: opts.tableMode,
+    textLimit: opts.chunking?.maxChars,
   });
   const flags = resolveDiscordMessageFlags({
     suppressEmbeds: resolveDiscordSuppressEmbeds({ configured: account.config.suppressEmbeds }),
@@ -140,8 +130,10 @@ export async function sendWebhookMessageDiscord(
     });
   }
 
+  const endpoint = getDiscordEndpointRuntime();
+  const restApiBaseUrl = endpoint?.descriptor.restApiBaseUrl ?? "https://discord.com/api/v10";
   const url = new URL(
-    `https://discord.com/api/v10/webhooks/${encodeURIComponent(webhookId)}/${encodeURIComponent(webhookToken)}`,
+    `${restApiBaseUrl}/webhooks/${encodeURIComponent(webhookId)}/${encodeURIComponent(webhookToken)}`,
   );
   url.searchParams.set("wait", opts.wait === false ? "false" : "true");
   if (opts.threadId != null && opts.threadId !== "") {
@@ -155,6 +147,7 @@ export async function sendWebhookMessageDiscord(
   // Alias expansion happens after the outer delivery planner. Bound the actual
   // wire text here, retaining each accepted part before another can fail.
   const chunks = chunkDiscordTextWithMode(textWithMentions, {
+    maxChars: textLimit,
     maxLines: opts.chunking
       ? (opts.chunking.maxLines ?? account.config.maxLinesPerMessage)
       : Number.MAX_SAFE_INTEGER,
@@ -170,7 +163,7 @@ export async function sendWebhookMessageDiscord(
         async () => {
           await opts.onPlatformSendDispatch?.();
           opts.assertPlatformSendAuthorized?.();
-          const attemptResponse = await (proxyFetch ?? fetch)(url.toString(), {
+          const attemptResponse = await (endpoint?.fetch ?? proxyFetch ?? fetch)(url.toString(), {
             method: "POST",
             headers: {
               "content-type": "application/json",
@@ -222,7 +215,7 @@ export async function sendWebhookMessageDiscord(
         fallbackChannelId: opts.threadId ? String(opts.threadId) : "",
         kind: "text",
         ...(opts.threadId != null ? { threadId: opts.threadId } : {}),
-        ...(replyTo ? { replyToId: replyTo } : {}),
+        reply: createReusableDiscordReplyReference(replyTo),
       });
       const resultConversationId = result.channelId.trim();
       if (result.messageId && resultConversationId) {

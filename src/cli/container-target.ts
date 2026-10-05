@@ -1,4 +1,3 @@
-// CLI container targeting: parse --container and re-exec the command inside Docker/Podman.
 import { spawnSync } from "node:child_process";
 import { isIP } from "node:net";
 import { expectDefined } from "@openclaw/normalization-core";
@@ -17,18 +16,8 @@ type CliContainerTargetResult =
   | { handled: true; exitCode: number }
   | { handled: false; argv: string[] };
 
-type ContainerTargetDeps = {
-  env: NodeJS.ProcessEnv;
-  spawnSync: typeof spawnSync;
-  stdinIsTTY: boolean;
-  stdoutIsTTY: boolean;
-};
-
-type ContainerRuntimeExec = {
-  runtime: "podman" | "docker";
-  command: string;
-  argsPrefix: string[];
-};
+const CONTAINER_RUNTIMES = ["podman", "docker"] as const;
+type ContainerRuntime = (typeof CONTAINER_RUNTIMES)[number];
 
 const CONTAINER_ALLOW_LOOPBACK_PROXY_URL_ENV = "OPENCLAW_CONTAINER_ALLOW_LOOPBACK_PROXY_URL";
 const CONTAINER_RUNTIME_PROBE_TIMEOUT_MS = 10_000;
@@ -67,80 +56,29 @@ export function resolveCliContainerTarget(
   return parsed.container ?? normalizeOptionalString(env.OPENCLAW_CONTAINER) ?? null;
 }
 
-function isContainerRunning(params: {
-  exec: ContainerRuntimeExec;
-  containerName: string;
-  deps: Pick<ContainerTargetDeps, "spawnSync">;
-}): boolean {
-  const result = params.deps.spawnSync(
-    params.exec.command,
-    [...params.exec.argsPrefix, "inspect", "--format", "{{.State.Running}}", params.containerName],
-    params.exec.command === "sudo"
-      ? {
-          encoding: "utf8",
-          killSignal: "SIGKILL",
-          stdio: ["inherit", "pipe", "inherit"],
-          timeout: CONTAINER_RUNTIME_PROBE_TIMEOUT_MS,
-        }
-      : {
-          encoding: "utf8",
-          killSignal: "SIGKILL",
-          timeout: CONTAINER_RUNTIME_PROBE_TIMEOUT_MS,
-        },
-  );
-  return result.status === 0 && result.stdout.trim() === "true";
-}
-
-function candidateContainerRuntimes(): ContainerRuntimeExec[] {
-  return [
-    {
-      runtime: "podman",
-      command: "podman",
-      argsPrefix: [],
-    },
-    {
-      runtime: "docker",
-      command: "docker",
-      argsPrefix: [],
-    },
-  ];
-}
-
-function resolveRunningContainer(params: {
-  containerName: string;
-  env: NodeJS.ProcessEnv;
-  deps: Pick<ContainerTargetDeps, "spawnSync">;
-}): (ContainerRuntimeExec & { containerName: string }) | null {
-  const matches: Array<ContainerRuntimeExec & { containerName: string }> = [];
-  const candidates = candidateContainerRuntimes();
-  for (const exec of candidates) {
-    if (
-      isContainerRunning({
-        exec,
-        containerName: params.containerName,
-        deps: params.deps,
-      })
-    ) {
-      matches.push({ ...exec, containerName: params.containerName });
-      if (exec.runtime === "docker") {
-        break;
-      }
-    }
-  }
+function resolveRunningContainer(containerName: string): ContainerRuntime | null {
+  const matches = CONTAINER_RUNTIMES.filter((runtime) => {
+    const result = spawnSync(
+      runtime,
+      ["inspect", "--format", "{{.State.Running}}", containerName],
+      { encoding: "utf8", killSignal: "SIGKILL", timeout: CONTAINER_RUNTIME_PROBE_TIMEOUT_MS },
+    );
+    return result.status === 0 && result.stdout.trim() === "true";
+  });
   if (matches.length === 0) {
     return null;
   }
   if (matches.length > 1) {
-    const runtimes = matches.map((match) => match.runtime).join(", ");
+    const runtimes = matches.join(", ");
     throw new Error(
-      `Container "${params.containerName}" is running under multiple runtimes (${runtimes}); use a unique container name.`,
+      `Container "${containerName}" is running under multiple runtimes (${runtimes}); use a unique container name.`,
     );
   }
   return expectDefined(matches[0], "matches capture group 0");
 }
 
 function buildContainerExecArgs(params: {
-  exec: ContainerRuntimeExec;
+  runtime: ContainerRuntime;
   containerName: string;
   argv: string[];
   env: NodeJS.ProcessEnv;
@@ -148,7 +86,7 @@ function buildContainerExecArgs(params: {
   stdoutIsTTY: boolean;
 }): string[] {
   // Preserve proxy env only after loopback validation; localhost would point inside the container.
-  const envFlag = params.exec.runtime === "docker" ? "-e" : "--env";
+  const envFlag = params.runtime === "docker" ? "-e" : "--env";
   const proxyUrl = normalizeOptionalString(params.env.OPENCLAW_PROXY_URL);
   if (proxyUrl) {
     assertContainerProxyUrlIsReachable(proxyUrl, params.env);
@@ -156,7 +94,6 @@ function buildContainerExecArgs(params: {
   const proxyEnvArgs = proxyUrl ? [envFlag, `OPENCLAW_PROXY_URL=${proxyUrl}`] : [];
   const interactiveFlags = ["-i", ...(params.stdinIsTTY && params.stdoutIsTTY ? ["-t"] : [])];
   return [
-    ...params.exec.argsPrefix,
     "exec",
     ...interactiveFlags,
     envFlag,
@@ -174,13 +111,8 @@ function assertContainerProxyUrlIsReachable(proxyUrl: string, env: NodeJS.Proces
   if (env[CONTAINER_ALLOW_LOOPBACK_PROXY_URL_ENV] === "1") {
     return;
   }
-  let parsed: URL;
-  try {
-    parsed = new URL(proxyUrl);
-  } catch {
-    return;
-  }
-  if (!isLoopbackProxyHostname(parsed.hostname)) {
+  const parsed = URL.parse(proxyUrl);
+  if (!parsed || !isLoopbackProxyHostname(parsed.hostname)) {
     return;
   }
   throw new Error(
@@ -213,18 +145,17 @@ function isLoopbackProxyHostname(hostname: string): boolean {
 }
 
 function redactProxyUrlForMessage(raw: string): string {
-  try {
-    const url = new URL(raw);
-    if (url.username || url.password) {
-      url.username = "redacted";
-      url.password = url.password ? "redacted" : "";
-    }
-    url.search = "";
-    url.hash = "";
-    return url.toString();
-  } catch {
+  const url = URL.parse(raw);
+  if (!url) {
     return "<invalid URL>";
   }
+  if (url.username || url.password) {
+    url.username = "redacted";
+    url.password = url.password ? "redacted" : "";
+  }
+  url.search = "";
+  url.hash = "";
+  return url.toString();
 }
 
 function buildContainerExecEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -267,18 +198,8 @@ function isBlockedContainerCommand(argv: string[]): boolean {
   return false;
 }
 
-export function maybeRunCliInContainer(
-  argv: string[],
-  deps?: Partial<ContainerTargetDeps>,
-): CliContainerTargetResult {
-  const resolvedDeps: ContainerTargetDeps = {
-    env: deps?.env ?? process.env,
-    spawnSync: deps?.spawnSync ?? spawnSync,
-    stdinIsTTY: deps?.stdinIsTTY ?? process.stdin.isTTY,
-    stdoutIsTTY: deps?.stdoutIsTTY ?? process.stdout.isTTY,
-  };
-
-  if (resolvedDeps.env.OPENCLAW_CLI_CONTAINER_BYPASS === "1") {
+export function maybeRunCliInContainer(argv: string[]): CliContainerTargetResult {
+  if (process.env.OPENCLAW_CLI_CONTAINER_BYPASS === "1") {
     return { handled: false, argv };
   }
 
@@ -286,7 +207,7 @@ export function maybeRunCliInContainer(
   if (!parsed.ok) {
     throw new Error(parsed.error);
   }
-  const containerName = resolveCliContainerTarget(argv, resolvedDeps.env);
+  const containerName = parsed.container ?? normalizeOptionalString(process.env.OPENCLAW_CONTAINER);
   if (!containerName) {
     return { handled: false, argv: parsed.argv };
   }
@@ -296,28 +217,24 @@ export function maybeRunCliInContainer(
     );
   }
 
-  const runningContainer = resolveRunningContainer({
-    containerName,
-    env: resolvedDeps.env,
-    deps: resolvedDeps,
-  });
+  const runningContainer = resolveRunningContainer(containerName);
   if (!runningContainer) {
     throw new Error(`No running container matched "${containerName}" under podman or docker.`);
   }
 
-  const result = resolvedDeps.spawnSync(
-    runningContainer.command,
+  const result = spawnSync(
+    runningContainer,
     buildContainerExecArgs({
-      exec: runningContainer,
-      containerName: runningContainer.containerName,
+      runtime: runningContainer,
+      containerName,
       argv: parsed.argv.slice(2),
-      env: resolvedDeps.env,
-      stdinIsTTY: resolvedDeps.stdinIsTTY,
-      stdoutIsTTY: resolvedDeps.stdoutIsTTY,
+      env: process.env,
+      stdinIsTTY: process.stdin.isTTY,
+      stdoutIsTTY: process.stdout.isTTY,
     }),
     {
       stdio: "inherit",
-      env: buildContainerExecEnv(resolvedDeps.env),
+      env: buildContainerExecEnv(process.env),
     },
   );
   if (result.error) {

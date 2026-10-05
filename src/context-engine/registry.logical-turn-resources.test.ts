@@ -8,9 +8,11 @@ import { createContextEngineLogicalTurnLease } from "../agents/harness/context-e
 import { createAgentCleanupScope } from "../agents/run-cleanup-timeout.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { PluginRegistryInspectionResources } from "../plugins/registry-inspection-resources.js";
+import { retireInspectionInstances } from "../plugins/registry-inspection.test-support.js";
 import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-request-scope.js";
 import { createPluginRecord } from "../plugins/status.test-helpers.js";
 import { AsyncWorkScope, getAsyncWorkSignal, trackAsyncWork } from "../shared/async-work-scope.js";
+import * as initialization from "./init.js";
 import { LegacyContextEngine } from "./legacy.js";
 import * as contextEngineRegistry from "./registry.js";
 import {
@@ -77,14 +79,17 @@ it.each([
   "last-user",
   "raw",
   "raw-view",
+  "initialization",
+  "initialization-error",
+  "initialization-abort",
 ] as const)("retains the adopted engine's native source through %s", async (mode) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "context-engine-source-"));
   const databasePath = path.join(directory, "source.sqlite");
   const database = new DatabaseSync(databasePath);
-  const source = new PluginRegistryInspectionResources();
+  const source = new PluginRegistryInspectionResources(retireInspectionInstances);
   const donor = createEmptyPluginRegistry();
   const supplyingView = createEmptyPluginRegistry();
-  const viewSource = new PluginRegistryInspectionResources();
+  const viewSource = new PluginRegistryInspectionResources(retireInspectionInstances);
   const plugin = { id: "engine-source-fixture", source: path.join(directory, "plugin.cjs") };
   donor.plugins.push(createPluginRecord(plugin));
   supplyingView.plugins.push(createPluginRecord(plugin));
@@ -237,6 +242,17 @@ it.each([
   const foreign = new AsyncWorkScope();
   const leases: Array<Awaited<ReturnType<typeof createContextEngineLogicalTurnLease>>> = [];
   const pending: Array<Promise<unknown>> = [];
+  const initializationStarted = createDeferred();
+  const initializationGate = createDeferred();
+  const initialize = initialization.ensureContextEnginesInitialized;
+  const initializeSpy =
+    mode === "initialization" || mode === "initialization-error" || mode === "initialization-abort"
+      ? vi.spyOn(initialization, "ensureContextEnginesInitialized").mockImplementation(async () => {
+          await initialize();
+          initializationStarted.resolve();
+          await initializationGate.promise;
+        })
+      : undefined;
   const start = async () => {
     const create = () =>
       cleanupScope.run(() =>
@@ -261,6 +277,34 @@ it.each([
   const first = start();
   pending.push(first);
   try {
+    if (initializeSpy) {
+      await source.release();
+      await initializationStarted.promise;
+      expect(database.isOpen).toBe(true);
+      expect(contexts).toEqual([]);
+      if (mode === "initialization-error" || mode === "initialization-abort") {
+        const failure = new Error("initialization failed");
+        if (mode === "initialization-error") {
+          initializationGate.reject(failure);
+        } else {
+          parent.beginClose(failure);
+          initializationGate.resolve();
+        }
+        await expect(first).rejects.toBe(failure);
+        await parent.drain();
+        expect(sourceDisposals).toBe(1);
+        expect(database.isOpen).toBe(false);
+        expect(engineDisposals).toBe(0);
+        return;
+      }
+      const replacement = vi.fn(() => new LegacyContextEngine());
+      registerContextEngineInRegistry(copiedView, "selected", replacement, `plugin:${plugin.id}`, {
+        allowSameOwnerRefresh: true,
+      });
+      initializationGate.resolve();
+      await first;
+      expect(replacement).not.toHaveBeenCalled();
+    }
     if (mode === "selection") {
       await source.release();
     }
@@ -391,6 +435,7 @@ it.each([
     reopened.close();
   } finally {
     vi.useRealTimers();
+    initializationGate.resolve();
     factoryGate.resolve();
     factoryTail.resolve();
     disposeGate.resolve();
@@ -402,6 +447,7 @@ it.each([
     await foreign.drain();
     await source.release();
     await viewSource.release();
+    initializeSpy?.mockRestore();
     if (database.isOpen) {
       database.close();
     }
@@ -413,7 +459,7 @@ it("disposes a shared engine once while releasing both factory source claims", a
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "context-engine-alias-"));
   const database = new DatabaseSync(path.join(directory, "source.sqlite"));
   const registry = createEmptyPluginRegistry();
-  const resources = new PluginRegistryInspectionResources();
+  const resources = new PluginRegistryInspectionResources(retireInspectionInstances);
   resources.attach(registry);
   const sourceDisposed = createDeferred();
   const finishTail = createDeferred();

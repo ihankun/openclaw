@@ -3,6 +3,10 @@ import {
   makeModel,
   makeOpenClawConfigFixture,
 } from "./embedded-agent-runner/model.test-harness.js";
+import {
+  acquireEffectiveToolInventoryRuntimeModelContext,
+  resolveConfiguredModelCompat,
+} from "./tools-effective-inventory.js";
 
 const runtimeMocks = vi.hoisted(() => {
   const createLease = (owner: string) => {
@@ -14,7 +18,7 @@ const runtimeMocks = vi.hoisted(() => {
       snapshot: {
         createStores: vi.fn(() => ({ authStorage, modelRegistry })),
       },
-      release: vi.fn(),
+      [Symbol.asyncDispose]: vi.fn(async () => {}),
     };
   };
   const requestLease = createLease("request");
@@ -69,8 +73,8 @@ describe("acquireEffectiveToolInventoryRuntimeModelContext", () => {
     runtimeMocks.requestLease.snapshot.createStores.mockClear();
     runtimeMocks.publishedLease.snapshot.createStores.mockClear();
     runtimeMocks.resolveModelAsync.mockClear();
-    runtimeMocks.requestLease.release.mockClear();
-    runtimeMocks.publishedLease.release.mockClear();
+    runtimeMocks.requestLease[Symbol.asyncDispose].mockClear();
+    runtimeMocks.publishedLease[Symbol.asyncDispose].mockClear();
     runtimeMocks.staticCatalogModel.mockReset();
   });
 
@@ -79,8 +83,6 @@ describe("acquireEffectiveToolInventoryRuntimeModelContext", () => {
     { owner: "published", agentId: "research", lease: runtimeMocks.publishedLease },
   ])("prepares dynamic model context with a $owner runtime lease", async ({ lease, agentId }) => {
     runtimeMocks.acquire.mockResolvedValueOnce(lease);
-    const { acquireEffectiveToolInventoryRuntimeModelContext } =
-      await import("./tools-effective-inventory.js");
     const cfg = makeOpenClawConfigFixture();
     const agentDir = `/tmp/agents/${agentId}/agent`;
     const workspaceDir = `/tmp/workspace-${agentId}`;
@@ -110,18 +112,21 @@ describe("acquireEffectiveToolInventoryRuntimeModelContext", () => {
         preparedModelRuntime: lease.snapshot,
       },
     );
-    expect(runtimeMocks.acquire).toHaveBeenCalledWith({
-      agentId,
-      agentDir,
-      config: cfg,
-      workspaceDir,
-      loadRuntimePlugins: true,
-      runtimePluginSelections: [{ provider: "openai", modelId: "chat-latest", agentId }],
-    });
-    expect(lease.release).not.toHaveBeenCalled();
-    acquired.release();
-    acquired.release();
-    expect(lease.release).toHaveBeenCalledTimes(1);
+    expect(runtimeMocks.acquire).toHaveBeenCalledWith(
+      {
+        agentId,
+        agentDir,
+        config: cfg,
+        workspaceDir,
+        loadRuntimePlugins: true,
+        runtimePluginSelections: [{ provider: "openai", modelId: "chat-latest", agentId }],
+      },
+      { catalogMode: "static" },
+    );
+    expect(lease[Symbol.asyncDispose]).not.toHaveBeenCalled();
+    await acquired[Symbol.asyncDispose]();
+    await acquired[Symbol.asyncDispose]();
+    expect(lease[Symbol.asyncDispose]).toHaveBeenCalledTimes(1);
     expect(() => acquired.run(() => undefined)).toThrow("has been released");
   });
 
@@ -129,18 +134,15 @@ describe("acquireEffectiveToolInventoryRuntimeModelContext", () => {
     { modelProvider: "", modelId: "chat-latest" },
     { modelProvider: "openai", modelId: " " },
   ])("skips runtime preparation for invalid model input", async (input) => {
-    const { acquireEffectiveToolInventoryRuntimeModelContext } =
-      await import("./tools-effective-inventory.js");
-
     const acquired = await acquireEffectiveToolInventoryRuntimeModelContext({
       cfg: {},
       ...input,
     });
     expect(acquired.run((context) => context)).toEqual({});
-    acquired.release();
+    await acquired[Symbol.asyncDispose]();
     expect(runtimeMocks.acquire).not.toHaveBeenCalled();
     expect(runtimeMocks.resolveModelAsync).not.toHaveBeenCalled();
-    expect(runtimeMocks.requestLease.release).not.toHaveBeenCalled();
+    expect(runtimeMocks.requestLease[Symbol.asyncDispose]).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -171,8 +173,6 @@ describe("acquireEffectiveToolInventoryRuntimeModelContext", () => {
       providerKey?: string,
       siblingProviderKey?: string,
     ) => {
-      const { acquireEffectiveToolInventoryRuntimeModelContext, resolveConfiguredModelCompat } =
-        await import("./tools-effective-inventory.js");
       const configuredModel = {
         ...makeModel(rowId),
         name: "Configured",
@@ -238,10 +238,10 @@ describe("acquireEffectiveToolInventoryRuntimeModelContext", () => {
         supportsTools: true,
       });
       expect(configuredModel.id).toBe(rowId);
-      acquired.release();
+      await acquired[Symbol.asyncDispose]();
       expect(runtimeMocks.acquire).not.toHaveBeenCalled();
       expect(runtimeMocks.resolveModelAsync).not.toHaveBeenCalled();
-      expect(runtimeMocks.requestLease.release).not.toHaveBeenCalled();
+      expect(runtimeMocks.requestLease[Symbol.asyncDispose]).not.toHaveBeenCalled();
     },
   );
 
@@ -253,8 +253,6 @@ describe("acquireEffectiveToolInventoryRuntimeModelContext", () => {
       api: "openai-responses",
       baseUrl: "https://api.openai.com/v1",
     });
-    const { acquireEffectiveToolInventoryRuntimeModelContext } =
-      await import("./tools-effective-inventory.js");
 
     const acquired = await acquireEffectiveToolInventoryRuntimeModelContext({
       cfg: {},
@@ -265,17 +263,15 @@ describe("acquireEffectiveToolInventoryRuntimeModelContext", () => {
       modelApi: "openai-responses",
       runtimeModel: { id: "bundled", provider: "openai" },
     });
-    acquired.release();
+    await acquired[Symbol.asyncDispose]();
     expect(runtimeMocks.acquire).not.toHaveBeenCalled();
     expect(runtimeMocks.resolveModelAsync).not.toHaveBeenCalled();
-    expect(runtimeMocks.requestLease.release).not.toHaveBeenCalled();
+    expect(runtimeMocks.requestLease[Symbol.asyncDispose]).not.toHaveBeenCalled();
   });
 
   it("releases the runtime lease when dynamic model resolution fails", async () => {
     const failure = new Error("dynamic model failed");
     runtimeMocks.resolveModelAsync.mockRejectedValueOnce(failure);
-    const { acquireEffectiveToolInventoryRuntimeModelContext } =
-      await import("./tools-effective-inventory.js");
 
     await expect(
       acquireEffectiveToolInventoryRuntimeModelContext({
@@ -284,6 +280,6 @@ describe("acquireEffectiveToolInventoryRuntimeModelContext", () => {
         modelId: "chat-latest",
       }),
     ).rejects.toBe(failure);
-    expect(runtimeMocks.requestLease.release).toHaveBeenCalledTimes(1);
+    expect(runtimeMocks.requestLease[Symbol.asyncDispose]).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { root as fsRoot } from "@openclaw/fs-safe/root";
+import { readSecretFile } from "@openclaw/fs-safe/secret";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { readNonBlankString } from "@openclaw/normalization-core/string-coerce";
 import { parseDocument, stringify as stringifyYaml } from "yaml";
@@ -14,24 +16,35 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isSecretRef, isValidEnvSecretRefId } from "../config/types.secrets.js";
 import type { GitHubToolIdentityConfig } from "../config/types.tools.js";
 import { hasErrnoCode } from "../infra/errno.js";
-import { readSecretFile } from "../infra/fs-safe-advanced.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { resolveAgentConfig, resolveAgentWorkspaceDir } from "./agent-scope.js";
+import {
+  CLEARED_GITHUB_CREDENTIALS,
+  resolveGitHubApiBaseUrl,
+  resolveGitHubHost,
+  withGitHubToken,
+} from "./github-host-runtime.js";
+import { resolveConfiguredGitHubApiBaseUrl } from "./github-host.js";
 import { verifyGitHubCredential } from "./github-oauth-client.js";
 import { inspectGitHubOAuthRecord } from "./github-oauth-records.js";
 import {
+  clearNativeGitHubTokenCache,
   createGitHubReadIdentity,
   GITHUB_IDENTITY_OUTPUT_LIMIT_BYTES as PROFILE_OUTPUT_LIMIT_BYTES,
   GitHubIdentityError,
   normalizeGitHubToken as normalizeManagedGitHubToken,
+  readCachedNativeGitHubToken,
   readNativeGitHubToken,
   runGitHubIdentityCommand as runIdentityCommand,
+  startGitHubIdentityOperation,
   type GitHubIdentityPreparation,
   type GitHubReadIdentityPreparation,
+  type GitHubReadIdentityStarter,
   type PreparedGitHubReadIdentity,
   type PreparedGitHubSourceReadIdentity,
 } from "./github-read-identity.js";
-import type { GitHubToolAccount } from "./github-tool-account.js";
+import { managedGitHubHosts, type GitHubToolAccount } from "./github-tool-account.js";
+import type { PreparedGitHubToolEnvironment } from "./github-tool-identity.types.js";
 
 export { GitHubIdentityError } from "./github-read-identity.js";
 
@@ -133,14 +146,6 @@ function resolveScopedGitHubToolIdentity(params: {
 
 type ResolvedGitHubToolIdentity = ReturnType<typeof resolveGitHubToolIdentity>;
 
-export type PreparedGitHubToolEnvironment = Readonly<{
-  credentialScrubEnv: Readonly<Record<string, string>>;
-  localIdentityEnv: Readonly<Record<string, string>>;
-  excludedStoreNames: readonly string[];
-  /** A local process must retain the host-selected profile and author identity. */
-  managedLocalIdentity: boolean;
-}>;
-
 export function managedGitHubIdentityEnvironment(params: {
   profileDir: string;
   gitAuthor?: { name?: string; email?: string };
@@ -186,7 +191,7 @@ function prepareGitHubToolEnvironmentForIdentity(
     params.sourceConfig?.gateway?.controlUi?.github?.token ??
     params.config.gateway?.controlUi?.github?.token;
   const credentialScrubEnv: Record<string, string> = managedLocalIdentity
-    ? { GH_TOKEN: "", GITHUB_TOKEN: "" }
+    ? { ...CLEARED_GITHUB_CREDENTIALS }
     : {};
   const excludedStoreNames: string[] = [];
   if (isSecretRef(previewToken)) {
@@ -378,11 +383,13 @@ async function resolveGitHubIdentityFacts(
   const identity = params.identity;
   const managed = identity.source !== "system-detected";
   const probeEnv = githubIdentityProbeEnvironment(params, identity);
+  const host = resolveGitHubHost();
+  const apiBaseUrl = resolveGitHubApiBaseUrl();
   const token = managed
     ? await readManagedGitHubToken(identity.profileDir)
-    : await readNativeGitHubToken(probeEnv);
+    : await readNativeGitHubToken(probeEnv, false, host);
   const [probe, author] = await Promise.all([
-    token ? verifyGitHubCredential(token) : undefined,
+    token ? verifyGitHubCredential(token, managed ? undefined : { apiBaseUrl }) : undefined,
     readGitAuthor(probeEnv, params.cwd),
   ]);
   const account = probe?.status === "available" ? probe.account : null;
@@ -433,6 +440,7 @@ async function resolveGitHubIdentityFacts(
 export type PreparedGitHubPublicationIdentity = Readonly<{
   source: "system-detected" | "system-configured" | "agent-override" | "personal";
   profileId?: string;
+  host?: string;
   account: GitHubToolAccount;
   env: NodeJS.ProcessEnv;
 }>;
@@ -444,6 +452,14 @@ export async function preparePersonalGitHubPublicationIdentity(params: {
   assertCurrent: () => void;
 }): Promise<PreparedGitHubPublicationIdentity> {
   params.assertCurrent();
+  const host = resolveGitHubHost();
+  const apiBaseUrl = resolveGitHubApiBaseUrl();
+  const assertSelected = () => {
+    params.assertCurrent();
+    if (resolveGitHubHost() !== host || resolveGitHubApiBaseUrl() !== apiBaseUrl) {
+      throw new GitHubIdentityError("changed");
+    }
+  };
   const profileDir = resolveManagedGitHubProfileDir({
     agentId: "",
     scope: "personal",
@@ -453,16 +469,14 @@ export async function preparePersonalGitHubPublicationIdentity(params: {
   if (!token) {
     throw new Error("My GitHub profile is unavailable; reconnect My GitHub.");
   }
-  params.assertCurrent();
+  assertSelected();
   const env = {
-    ...process.env,
-    GH_TOKEN: token,
-    GITHUB_TOKEN: undefined,
+    ...withGitHubToken(process.env, token),
     GH_CONFIG_DIR: profileDir,
     GH_PROMPT_DISABLED: "1",
   };
   const probe = await verifyGitHubCredential(token);
-  params.assertCurrent();
+  assertSelected();
   if (probe.status !== "available") {
     throw new Error("My GitHub credential could not be verified; reconnect My GitHub.");
   }
@@ -472,6 +486,7 @@ export async function preparePersonalGitHubPublicationIdentity(params: {
   return Object.freeze({
     source: "personal",
     profileId: params.profileId,
+    host: GITHUB_HOST,
     account: probe.account,
     env: Object.freeze(env),
   });
@@ -486,6 +501,7 @@ export function matchesPreparedGitHubPublicationIdentity(params: {
   const current = resolveGitHubToolIdentity(params);
   return (
     current.source === params.identity.source &&
+    (params.identity.host ?? resolveGitHubHost()) === resolveGitHubHost() &&
     (current.source === "system-detected" || current.config.profileId === params.identity.profileId)
   );
 }
@@ -493,8 +509,12 @@ export function matchesPreparedGitHubPublicationIdentity(params: {
 async function prepareSharedGitHubIdentity(
   params: GitHubIdentityPreparation & {
     assertCurrent?: () => void;
+    startCurrent?: GitHubReadIdentityStarter;
     allowAnonymous?: boolean;
   },
+  readNativeToken = readNativeGitHubToken,
+  host = resolveGitHubHost(),
+  apiBaseUrl = resolveGitHubApiBaseUrl(),
 ) {
   const identity = resolveGitHubToolIdentity(params);
   const managed = identity.source !== "system-detected";
@@ -503,33 +523,44 @@ async function prepareSharedGitHubIdentity(
     GH_PROMPT_DISABLED: "1",
   });
   const env = currentEnvironment();
+  if (managed && (host !== GITHUB_HOST || apiBaseUrl !== resolveConfiguredGitHubApiBaseUrl())) {
+    const error = new GitHubIdentityError("unavailable");
+    error.message =
+      "Use a credential issued by the repository's GitHub host; managed profiles are issued by github.com.";
+    throw error;
+  }
   const readToken = () =>
     managed
       ? readManagedGitHubToken(identity.profileDir)
-      : readNativeGitHubToken(currentEnvironment(), params.allowAnonymous === true);
-  params.assertCurrent?.();
-  const token = await readToken();
-  params.assertCurrent?.();
+      : readNativeToken(currentEnvironment(), params.allowAnonymous === true, host);
+  const token = await startGitHubIdentityOperation(readToken, params);
   if (!token) {
-    if (!managed && params.allowAnonymous) {
-      return { prepared: undefined, token: undefined, readToken };
+    return startGitHubIdentityOperation(() => {
+      if (!managed && params.allowAnonymous) {
+        return { prepared: undefined, token: undefined, readToken };
+      }
+      throw new GitHubIdentityError("unavailable");
+    }, params);
+  }
+  const probe = await startGitHubIdentityOperation(
+    () => verifyGitHubCredential(token, { apiBaseUrl }),
+    params,
+  );
+  return startGitHubIdentityOperation(() => {
+    if (probe.status !== "available") {
+      throw new GitHubIdentityError(probe.status);
     }
-    throw new GitHubIdentityError("unavailable");
-  }
-  const probe = await verifyGitHubCredential(token);
-  params.assertCurrent?.();
-  if (probe.status !== "available") {
-    throw new GitHubIdentityError(probe.status);
-  }
-  const prepared: PreparedGitHubPublicationIdentity = Object.freeze({
-    source: identity.source,
-    ...(managed ? { profileId: identity.config.profileId } : {}),
-    account: probe.account,
-    // Broker children and worker launches receive this fixed snapshot. Profile
-    // retirement cannot redirect an already-admitted operation.
-    env: Object.freeze({ ...env, GH_TOKEN: token, GITHUB_TOKEN: undefined }),
-  });
-  return { prepared, token, readToken };
+    const prepared: PreparedGitHubPublicationIdentity = Object.freeze({
+      source: identity.source,
+      ...(managed ? { profileId: identity.config.profileId } : {}),
+      host,
+      account: probe.account,
+      // Broker children and worker launches receive this fixed snapshot. Profile
+      // retirement cannot redirect an already-admitted operation.
+      env: Object.freeze(withGitHubToken(env, token)),
+    });
+    return { prepared, token, readToken };
+  }, params);
 }
 
 /** Publication owns a fixed credential snapshot for its already-admitted operation. */
@@ -541,6 +572,17 @@ export async function prepareGitHubPublicationIdentity(
     throw new GitHubIdentityError("unavailable");
   }
   return prepared;
+}
+
+/** Options expose account facts only; publication obtains its own live credential. */
+export async function prepareGitHubPublicationOptionsIdentity(
+  params: GitHubIdentityPreparation & { assertCurrent?: () => void },
+): Promise<Pick<PreparedGitHubPublicationIdentity, "source" | "account">> {
+  const { prepared } = await prepareSharedGitHubIdentity(params, readCachedNativeGitHubToken);
+  if (!prepared) {
+    throw new GitHubIdentityError("unavailable");
+  }
+  return { source: prepared.source, account: prepared.account };
 }
 
 export function prepareGitHubReadIdentity(
@@ -567,16 +609,19 @@ export async function prepareGitHubReadIdentity(
       throw new GitHubIdentityError("changed");
     }
   };
+  const caller = { assertCurrent: assertSelected, startCurrent: params.startActive };
+  await startGitHubIdentityOperation(params.refresh, caller);
   assertSelected();
-  await params.refresh();
-  assertSelected();
-  const { token, readToken, prepared } = await prepareSharedGitHubIdentity({
-    ...params,
-    assertCurrent: assertSelected,
-  });
+  const { token, readToken, prepared } = await prepareSharedGitHubIdentity(
+    { ...params, ...caller },
+    readCachedNativeGitHubToken,
+    params.issuer,
+    params.issuer ? resolveConfiguredGitHubApiBaseUrl() : undefined,
+  );
   assertSelected();
   return createGitHubReadIdentity({
     assertSelected,
+    startActive: params.startActive,
     readToken,
     ...(!prepared || token === undefined
       ? { token: undefined, selection: { source: "anonymous" as const } }
@@ -593,38 +638,25 @@ export async function prepareGitHubReadIdentity(
 
 export async function removeManagedGitHubProfile(profileDir: string): Promise<void> {
   await fs.rm(profileDir, { recursive: true, force: true });
+  clearNativeGitHubTokenCache();
 }
 
-async function stageManagedGitHubProfile(parent: string, token: string) {
-  await fs.mkdir(parent, { recursive: true, mode: 0o700 });
-  await fs.chmod(parent, 0o700);
-  const stagingRoot = await fs.mkdtemp(path.join(parent, ".github-profile.staging-"));
-  const stagedProfile = path.join(stagingRoot, "profile");
-  try {
-    const credential = normalizeManagedGitHubToken(token);
-    const verified = await verifyGitHubCredential(credential);
-    if (verified.status !== "available") {
-      throw new Error("GitHub could not verify the managed credential.");
-    }
-    // Match gh's classic-token minimum scopes; fine-grained/integration tokens
-    // omit X-OAuth-Scopes, so their repository grants remain unknown.
-    const scopes = verified.scopes;
-    if (
-      scopes.length &&
-      (!scopes.includes("repo") ||
-        !["read:org", "write:org", "admin:org"].some((scope) => scopes.includes(scope)))
-    ) {
-      throw new Error("GitHub credential is missing required repo or read:org scopes.");
-    }
-    await writeManagedGitHubProfileFiles(stagedProfile, {
-      login: verified.account.login,
-      token: credential,
-    });
-    return { account: verified.account, stagedProfile, stagingRoot };
-  } catch (error) {
-    await fs.rm(stagingRoot, { recursive: true, force: true });
-    throw error;
+async function verifyManagedGitHubCredential(token: string) {
+  const credential = normalizeManagedGitHubToken(token);
+  const verified = await verifyGitHubCredential(credential);
+  if (verified.status !== "available") {
+    throw new Error("GitHub could not verify the managed credential.");
   }
+  // Match gh's classic-token minimum scopes; other token types omit X-OAuth-Scopes.
+  const scopes = verified.scopes;
+  if (
+    scopes.length &&
+    (!scopes.includes("repo") ||
+      !["read:org", "write:org", "admin:org"].some((scope) => scopes.includes(scope)))
+  ) {
+    throw new Error("GitHub credential is missing required repo or read:org scopes.");
+  }
+  return { account: verified.account, credential };
 }
 
 /** Write gh's external file contract without touching its OS keyring or verifying again. */
@@ -634,27 +666,9 @@ export async function writeManagedGitHubProfileFiles(
 ): Promise<void> {
   await fs.mkdir(profileDir, { recursive: true, mode: 0o700 });
   await fs.chmod(profileDir, 0o700);
-  const temporaryHosts = path.join(profileDir, `.hosts-${randomBytes(16).toString("hex")}.tmp`);
-  try {
-    await fs.writeFile(
-      temporaryHosts,
-      stringifyYaml({
-        [GITHUB_HOST]: {
-          user: identity.login,
-          oauth_token: identity.token,
-          users: { [identity.login]: { oauth_token: identity.token } },
-        },
-      }),
-      { mode: 0o600, flag: "wx" },
-    );
-    await fs.writeFile(path.join(profileDir, "config.yml"), stringifyYaml({ version: "1" }), {
-      mode: 0o600,
-    });
-    // A retained worker replaces the previous turn's credential as one complete document.
-    await fs.rename(temporaryHosts, path.join(profileDir, "hosts.yml"));
-  } finally {
-    await fs.rm(temporaryHosts, { force: true });
-  }
+  const profile = await fsRoot(profileDir, { mode: 0o600, mkdir: false, durable: false });
+  await profile.write("config.yml", stringifyYaml({ version: "1" }));
+  await profile.write("hosts.yml", managedGitHubHosts(identity));
 }
 
 /** Verifies a rotated token, then atomically replaces credentials in one stable profile. */
@@ -667,31 +681,31 @@ export async function refreshManagedGitHubProfile(params: {
   if (!(await isPrivateManagedGitHubProfile(params.profileDir))) {
     throw new Error("The configured GitHub identity profile is unavailable.");
   }
-  const staged = await stageManagedGitHubProfile(path.dirname(params.profileDir), params.token);
-  const targetHosts = path.join(params.profileDir, "hosts.yml");
-  const replacementHosts = path.join(
-    params.profileDir,
-    `.hosts.yml.refresh-${randomBytes(16).toString("hex")}`,
-  );
-  try {
-    params.assertCurrent?.();
-    if (staged.account.accountId !== params.expectedAccountId) {
-      throw new GitHubAccountMismatchError("GitHub OAuth refresh returned a different account.");
-    }
-    const targetStat = await fs.lstat(targetHosts);
-    if (!targetStat.isFile() || targetStat.isSymbolicLink()) {
-      throw new Error("The configured GitHub identity profile is unavailable.");
-    }
-    await fs.copyFile(path.join(staged.stagedProfile, "hosts.yml"), replacementHosts);
-    await fs.chmod(replacementHosts, 0o600);
-    params.assertCurrent?.();
-    await fs.rename(replacementHosts, targetHosts);
-    params.assertCurrent?.();
-    return staged.account;
-  } finally {
-    await fs.rm(replacementHosts, { force: true });
-    await fs.rm(staged.stagingRoot, { recursive: true, force: true });
+  const { account, credential } = await verifyManagedGitHubCredential(params.token);
+  params.assertCurrent?.();
+  if (account.accountId !== params.expectedAccountId) {
+    throw new GitHubAccountMismatchError("GitHub OAuth refresh returned a different account.");
   }
+  const targetHosts = path.join(params.profileDir, "hosts.yml");
+  const targetStat = await fs.lstat(targetHosts);
+  if (!targetStat.isFile() || targetStat.isSymbolicLink()) {
+    throw new Error("The configured GitHub identity profile is unavailable.");
+  }
+  const profile = await fsRoot(params.profileDir);
+  await profile.write(
+    "hosts.yml",
+    managedGitHubHosts({ login: account.login, token: credential }),
+    {
+      mode: 0o600,
+      mkdir: false,
+      durable: false,
+      mutationSymlinks: "reject",
+      assertBeforeMutation: params.assertCurrent,
+    },
+  );
+  clearNativeGitHubTokenCache();
+  params.assertCurrent?.();
+  return account;
 }
 
 /** Publishes a new inactive profile and switches config without retiring in-use generations. */
@@ -703,21 +717,30 @@ export async function installManagedGitHubProfile(params: {
   assertCurrent?: () => void;
 }): Promise<GitHubToolAccount> {
   const parent = path.dirname(params.profileDir);
-  const staged = await stageManagedGitHubProfile(parent, params.token);
+  await fs.mkdir(parent, { recursive: true, mode: 0o700 });
+  await fs.chmod(parent, 0o700);
+  const stagingRoot = await fs.mkdtemp(path.join(parent, ".github-profile.staging-"));
+  const stagedProfile = path.join(stagingRoot, "profile");
   let published = false;
   let committed = false;
   try {
+    const { account, credential } = await verifyManagedGitHubCredential(params.token);
+    await writeManagedGitHubProfileFiles(stagedProfile, {
+      login: account.login,
+      token: credential,
+    });
     params.assertCurrent?.();
-    await fs.rename(staged.stagedProfile, params.profileDir);
+    await fs.rename(stagedProfile, params.profileDir);
     published = true;
     params.assertCurrent?.();
-    await params.commitConfig(staged.account);
+    await params.commitConfig(account);
+    clearNativeGitHubTokenCache();
     committed = true;
-    return staged.account;
+    return account;
   } finally {
     if (published && !committed && !params.retainProfileOnCommitFailure) {
       await fs.rm(params.profileDir, { recursive: true, force: true });
     }
-    await fs.rm(staged.stagingRoot, { recursive: true, force: true });
+    await fs.rm(stagingRoot, { recursive: true, force: true });
   }
 }

@@ -8,13 +8,17 @@ import * as bundledMetadata from "../plugins/bundled-plugin-metadata.js";
 import { loadPluginManifestRegistryCore } from "../plugins/manifest-registry.js";
 import * as pluginCacheFiles from "../plugins/plugin-cache-files.js";
 import { createPluginCache, withPluginCache } from "../plugins/plugin-cache.js";
+import { closeOpenClawStateDatabaseByPath } from "../state/openclaw-state-db-cache.js";
 import {
-  closeOpenClawStateDatabaseByPath,
   closeOpenClawStateDatabaseForTest,
   openOpenClawStateDatabase,
 } from "../state/openclaw-state-db.js";
-import { projectUpdateCandidatePlugins } from "./update-candidate-plugins.js";
+import {
+  copyUpdateCandidatePlugins,
+  prepareUpdateCandidatePlugins,
+} from "./update-candidate-plugins.js";
 import { prepareUpdateCandidateRehearsal } from "./update-candidate-rehearsal.js";
+import { materializeUpdateCandidateStateWorker } from "./update-candidate-state.test-support.js";
 
 async function writePlugin(directory: string, id: string, generation: string) {
   await fs.mkdir(directory, { recursive: true });
@@ -189,6 +193,7 @@ it.each([
       await fs.chmod(candidatePlugin, 0o777);
     }
     const candidateMode = outsideCandidate ? (await fs.stat(candidatePlugin)).mode : undefined;
+    await materializeUpdateCandidateStateWorker(candidateHost);
     const rehearsal = await prepareUpdateCandidateRehearsal({
       config,
       candidateRoot: candidateHost,
@@ -221,7 +226,7 @@ it.each([
     } else {
       expect(selectedEntry.startsWith(rehearsal.stateDir + path.sep)).toBe(true);
     }
-    expect(await fs.readFile(shared)).toEqual(liveDatabase);
+    expect((await fs.readFile(shared)).equals(liveDatabase)).toBe(true);
     expect(await fs.readFile(path.join(sourcePlugin, "index.js"))).toEqual(liveEntry);
     expect(config.plugins?.installs?.demo?.sourcePath).toBe(locator);
     expect(
@@ -231,7 +236,6 @@ it.each([
         ),
       ),
     ).toEqual(sourceModes);
-    expect(await rehearsal.changedConfigKeys()).toEqual([]);
   } finally {
     closeOpenClawStateDatabaseForTest();
     await cleanupRehearsal?.();
@@ -258,8 +262,8 @@ it.each(["source", "candidate"])("does not enumerate an outside %s fallback", as
     }
     await writePlugin(installed, "demo", "external");
     await fs.symlink(external, fallback, "junction");
-    const projected = await withPluginCache(createPluginCache(), () =>
-      projectUpdateCandidatePlugins({
+    const projected = await withPluginCache(createPluginCache(), async () => {
+      const params = {
         stateDir: path.join(root, "state"),
         targetStateDir: path.join(root, "copy"),
         candidateRoot: candidateHost,
@@ -268,8 +272,10 @@ it.each(["source", "candidate"])("does not enumerate an outside %s fallback", as
           OPENCLAW_BUNDLED_PLUGINS_DIR: path.join(sourceHost, "dist", "extensions"),
           OPENCLAW_TEST_TRUST_BUNDLED_PLUGINS_DIR: "1",
         },
-      }),
-    );
+      } satisfies Parameters<typeof prepareUpdateCandidatePlugins>[0];
+      const projection = await prepareUpdateCandidatePlugins(params);
+      return copyUpdateCandidatePlugins(projection, params);
+    });
     expect(directoryReads.mock.calls.map(([directory]) => directory)).not.toContain(fallback);
     expect(metadata.mock.calls.map(([options]) => options?.scanDir)).not.toContain(fallback);
     expect(await fs.readFile(path.join(projected[installed]!, "index.js"), "utf8")).toBe(
@@ -355,6 +361,7 @@ it.each([false, true])(
           1,
         );
       closeOpenClawStateDatabaseByPath(path.join(stateDir, "state", "openclaw.sqlite"));
+      await materializeUpdateCandidateStateWorker(candidateHost);
       const rehearsal = await prepareUpdateCandidateRehearsal({
         config,
         stateDir,

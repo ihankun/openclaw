@@ -1,20 +1,23 @@
 // @vitest-environment node
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
+import type { Alias } from "vite";
 import { describe, expect, it, vi } from "vitest";
 import {
   hashControlUiTranslationText,
   loadControlUiTranslationMemory,
-  materializeControlUiLocaleCatalog,
 } from "../../../scripts/lib/control-ui-i18n-catalog-values.ts";
 import {
   loadControlUiSourceCatalog,
   readControlUiSourceCatalog,
 } from "../../../scripts/lib/control-ui-i18n-catalog.ts";
 import { flattenTranslations } from "../../../scripts/lib/control-ui-i18n-sync-plan.ts";
+import { createDeferred as deferred } from "../../../test/helpers/promise.js";
 import { controlUiLocaleModulesPlugin } from "../../config/control-ui-locales.ts";
 import {
   controlUiBrowserOnlySharedModuleAliases,
@@ -28,9 +31,13 @@ import {
 import { configHintTranslationKey } from "../i18n/lib/config-hint-translation.ts";
 import { en } from "../i18n/locales/en.ts";
 
-const childProcessMocks = vi.hoisted(() => ({ execFileSync: vi.fn() }));
+const childProcessMocks = vi.hoisted(() => {
+  // Shared Node browser fixtures can load Vite before this file registers its mocks.
+  vi.resetModules();
+  return { execFileSync: vi.fn() };
+});
 const fsMocks = vi.hoisted(() => ({ existsSync: vi.fn(), readFileSync: vi.fn() }));
-const tsxMocks = vi.hoisted(() => ({ register: vi.fn() }));
+const viteMocks = vi.hoisted(() => ({ runnerImport: vi.fn() }));
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
@@ -45,10 +52,10 @@ vi.mock("node:fs", async (importOriginal) => {
   return { ...actual, existsSync: fsMocks.existsSync, readFileSync: fsMocks.readFileSync };
 });
 
-vi.mock("tsx/esm/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("tsx/esm/api")>();
-  tsxMocks.register.mockImplementation(actual.register);
-  return { ...actual, register: tsxMocks.register };
+vi.mock("vite", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("vite")>();
+  viteMocks.runnerImport.mockImplementation(actual.runnerImport);
+  return { ...actual, runnerImport: viteMocks.runnerImport };
 });
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -63,8 +70,24 @@ function findStringAlias(key: string) {
   return resolveTsconfigPathAliasesForVite().find((alias) => alias.find === key);
 }
 
-function controlUiLocaleModuleHooks() {
+function controlUiLocaleModuleHooks(aliases: Alias[] = []) {
   const plugin = controlUiLocaleModulesPlugin();
+  const configHook = plugin.configResolved;
+  const configResolved = typeof configHook === "function" ? configHook : configHook?.handler;
+  expect(
+    configResolved?.call(
+      {} as never,
+      {
+        resolve: {
+          alias: [
+            ...aliases,
+            ...resolveSourcePackageAliasesForVite(),
+            ...resolveTsconfigPathAliasesForVite(),
+          ],
+        },
+      } as never,
+    ),
+  ).toBeUndefined();
   const resolveHook = plugin.resolveId;
   const resolveId = typeof resolveHook === "function" ? resolveHook : resolveHook?.handler;
   const loadHook = plugin.load;
@@ -95,16 +118,6 @@ async function loadControlUiLocaleModuleSource(
 
 function dataModuleUrl(source: string): string {
   return `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, reject, resolve };
 }
 
 async function executeControlUiLocaleModule(
@@ -332,6 +345,8 @@ describe("Control UI Vite config", () => {
       resolveControlUiBuildInfo({
         env: { OPENCLAW_CONTROL_UI_RELEASE_BUILD: "true" },
         readGitCommit: () => null,
+        readGitBranch: () => null,
+        readGitDirty: () => null,
         readPackageVersion: () => "2026.7.10",
       }),
     ).toThrow("OPENCLAW_CONTROL_UI_RELEASE_BUILD must be 1 when set");
@@ -343,6 +358,8 @@ describe("Control UI Vite config", () => {
       resolveControlUiBuildInfo({
         env: { GITHUB_SHA: "b".repeat(40) },
         readGitCommit,
+        readGitBranch: () => null,
+        readGitDirty: () => null,
         readPackageVersion: () => null,
       }),
     ).toMatchObject({ commit: "c".repeat(40), commitAt: null });
@@ -351,6 +368,8 @@ describe("Control UI Vite config", () => {
       resolveControlUiBuildInfo({
         env: { GITHUB_SHA: "b".repeat(40) },
         readGitCommit: () => null,
+        readGitBranch: () => null,
+        readGitDirty: () => null,
         readPackageVersion: () => null,
       }).commit,
     ).toBe("b".repeat(40));
@@ -369,6 +388,8 @@ describe("Control UI Vite config", () => {
       resolveControlUiBuildInfo({
         env: { GIT_SHA: "A".repeat(40), GITHUB_SHA: "b".repeat(40) },
         readGitCommit,
+        readGitBranch: () => null,
+        readGitDirty: () => null,
         readPackageVersion: () => null,
       }).commit,
     ).toBe("a".repeat(40));
@@ -461,6 +482,8 @@ describe("Control UI Vite config", () => {
           OPENCLAW_BUILD_TIMESTAMP: "2026-07-10T13:14:15.000Z",
         },
         readGitCommit: () => "a".repeat(40),
+        readGitBranch: () => null,
+        readGitDirty: () => null,
         readPackageVersion: () => "2026.7.10",
       }).buildId,
     ).toBe("2026.7.10-aaaaaaaaaaaa-2026-07-10T13-14-15.000Z");
@@ -474,6 +497,8 @@ describe("Control UI Vite config", () => {
           OPENCLAW_BUILD_TIMESTAMP: "2026-07-10T13:14:15.000Z",
         },
         readGitCommit: () => "a".repeat(40),
+        readGitBranch: () => null,
+        readGitDirty: () => null,
         readPackageVersion: () => "2026.7.10",
       }).buildId,
     ).toBe("2026.7.10-aaaaaaaaaaaa-2026-07-10T13-14-15.000Z");
@@ -634,64 +659,6 @@ describe("Control UI Vite config", () => {
     );
   });
 
-  it("materializes translated config hints from the current source catalog", () => {
-    const text = "Gateway Token";
-    const key = configHintTranslationKey("gateway.auth.token", "label", text);
-    const translated = materializeControlUiLocaleCatalog(
-      flattenTranslations(loadControlUiSourceCatalog()),
-      new Map([
-        [
-          "config-hint",
-          {
-            cache_key: "config-hint",
-            model: "test",
-            provider: "test",
-            segment_id: key,
-            source_path: "test",
-            src_lang: "en",
-            text,
-            text_hash: hashControlUiTranslationText(text),
-            tgt_lang: "tr",
-            translated: "Ağ geçidi belirteci",
-            updated_at: "2026-09-03T00:00:00.000Z",
-          },
-        ],
-      ]),
-    );
-
-    expect(flattenTranslations(translated).get(key)).toBe("Ağ geçidi belirteci");
-  });
-
-  it("cannot serve a stale config-hint translation under the current content-addressed key", () => {
-    const oldText = "Old Gateway Token";
-    const oldKey = configHintTranslationKey("gateway.auth.token", "label", oldText);
-    const currentKey = configHintTranslationKey("gateway.auth.token", "label", "Gateway Token");
-    const translated = materializeControlUiLocaleCatalog(
-      flattenTranslations(loadControlUiSourceCatalog()),
-      new Map([
-        [
-          "stale-config-hint",
-          {
-            cache_key: "stale-config-hint",
-            model: "test",
-            provider: "test",
-            segment_id: oldKey,
-            source_path: "test",
-            src_lang: "en",
-            text: oldText,
-            text_hash: hashControlUiTranslationText(oldText),
-            tgt_lang: "tr",
-            translated: "Eski ağ geçidi belirteci",
-            updated_at: "2026-09-03T00:00:00.000Z",
-          },
-        ],
-      ]),
-    );
-
-    expect(flattenTranslations(translated).get(oldKey)).toBeUndefined();
-    expect(flattenTranslations(translated).get(currentKey)).toBeUndefined();
-  });
-
   it("includes every English dependency in the raw source-hash input", async () => {
     const localesDir = path.join(repoRoot, "ui/src/i18n/locales");
     const sourceRaw = await readControlUiSourceCatalog();
@@ -748,7 +715,17 @@ describe("Control UI Vite config", () => {
     expect(catalog.configHints).toBeTypeOf("object");
     expect(catalog.activity.title).toBeTypeOf("string");
     expect(addWatchFile).toHaveBeenCalledWith(memoryPath);
-    expect(addWatchFile).toHaveBeenCalledWith(path.join(repoRoot, "src/config/schema.hints.ts"));
+    const watchedFiles = addWatchFile.mock.calls.map(([file]) => path.normalize(file));
+    for (const source of [
+      "scripts/lib/control-ui-i18n-catalog.ts",
+      "ui/src/i18n/locales/en-activity.ts",
+      "src/config/schema.hints.ts",
+      "src/config/schema.help.ts",
+      "src/config/schema.labels.ts",
+      "packages/net-policy/src/redact-sensitive-url.ts",
+    ]) {
+      expect(watchedFiles).toContain(path.join(repoRoot, source));
+    }
   });
 
   it("bootstraps only an absent locale memory from the English catalog", async () => {
@@ -770,7 +747,7 @@ describe("Control UI Vite config", () => {
         expect([...flattenTranslations(catalog)]).toEqual([
           ...flattenTranslations(loadControlUiSourceCatalog()),
         ]);
-        expect(addWatchFile).toHaveBeenCalledWith(
+        expect(addWatchFile.mock.calls.map(([file]) => path.normalize(file))).toContain(
           path.join(repoRoot, "src/config/schema.hints.ts"),
         );
       },
@@ -802,70 +779,131 @@ describe("Control UI Vite config", () => {
     { name: "current rejected", outcome: "reject" as const, invalidate: false },
   ])("recovers a $name source-catalog generation", async ({ outcome, invalidate }) => {
     const staleImport = deferred<{
-      loadControlUiSourceCatalog: () => ReturnType<typeof loadControlUiSourceCatalog>;
+      module: { loadControlUiSourceCatalog: () => ReturnType<typeof loadControlUiSourceCatalog> };
+      dependencies: string[];
     }>();
     const currentCatalog = {
       common: { health: "current health" },
       configHints: { gateway: { auth: { token: { label: "current token" } } } },
     };
-    const staleLoader = {
-      import: vi.fn(() => staleImport.promise),
-      unregister: vi.fn(async () => undefined),
-    };
-    const currentLoader = {
-      import: vi.fn(async () => ({
-        loadControlUiSourceCatalog: () => currentCatalog,
-      })),
-      unregister: vi.fn(async () => undefined),
-    };
-    let registrations = 0;
+    let imports = 0;
+    const sourceImport = vi.fn(async () =>
+      imports++ === 0
+        ? staleImport.promise
+        : { module: { loadControlUiSourceCatalog: () => currentCatalog }, dependencies: [] },
+    );
 
     await fsMocks.existsSync.withImplementation(
       () => false,
       async () => {
-        await tsxMocks.register.withImplementation(
-          () => (registrations++ === 0 ? staleLoader : currentLoader) as never,
-          async () => {
-            const { load, watchChange } = controlUiLocaleModuleHooks();
-            let baseSourcePromise = loadControlUiLocaleModuleSource(
-              load,
-              "\0virtual:openclaw-control-ui-locale/fr",
-            );
-            await vi.waitFor(() => expect(staleLoader.import).toHaveBeenCalledOnce());
-            if (invalidate) {
-              await watchChange.call({} as never, "src/config/schema.hints.ts", {} as never);
-            }
-            if (outcome === "resolve") {
-              staleImport.resolve({
+        await viteMocks.runnerImport.withImplementation(sourceImport, async () => {
+          const { load, watchChange } = controlUiLocaleModuleHooks();
+          let baseSourcePromise = loadControlUiLocaleModuleSource(
+            load,
+            "\0virtual:openclaw-control-ui-locale/fr",
+          );
+          await vi.waitFor(() => expect(sourceImport).toHaveBeenCalledOnce());
+          if (invalidate) {
+            await watchChange.call({} as never, "src/config/schema.hints.ts", {} as never);
+          }
+          if (outcome === "resolve") {
+            staleImport.resolve({
+              module: {
                 loadControlUiSourceCatalog: () => ({
                   common: { health: "stale health" },
                   configHints: { gateway: { auth: { token: { label: "stale token" } } } },
                 }),
-              });
-            } else {
-              const error = new Error("source import failed");
-              staleImport.reject(error);
-              if (!invalidate) {
-                await expect(baseSourcePromise).rejects.toBe(error);
-                baseSourcePromise = loadControlUiLocaleModuleSource(
-                  load,
-                  "\0virtual:openclaw-control-ui-locale/fr",
-                );
-              }
+              },
+              dependencies: [],
+            });
+          } else {
+            const error = new Error("source import failed");
+            staleImport.reject(error);
+            if (!invalidate) {
+              await expect(baseSourcePromise).rejects.toBe(error);
+              baseSourcePromise = loadControlUiLocaleModuleSource(
+                load,
+                "\0virtual:openclaw-control-ui-locale/fr",
+              );
             }
-            const baseSource = await baseSourcePromise;
-            const configHintsSource = await loadControlUiLocaleModuleSource(
-              load,
-              "\0virtual:openclaw-control-ui-locale-config-hints/fr",
-            );
-            await expect(
-              executeControlUiLocaleModule("fr", baseSource, configHintsSource),
-            ).resolves.toEqual(currentCatalog);
-            expect(currentLoader.import).toHaveBeenCalledOnce();
-          },
-        );
+          }
+          const baseSource = await baseSourcePromise;
+          const configHintsSource = await loadControlUiLocaleModuleSource(
+            load,
+            "\0virtual:openclaw-control-ui-locale-config-hints/fr",
+          );
+          await expect(
+            executeControlUiLocaleModule("fr", baseSource, configHintsSource),
+          ).resolves.toEqual(currentCatalog);
+          expect(sourceImport).toHaveBeenCalledTimes(2);
+        });
       },
     );
+  });
+
+  it("reloads configured source aliases instead of installed package outputs", async () => {
+    const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "control-ui-locale-")));
+    const entry = path.join(root, "catalog.ts");
+    const dependency = path.join(root, "labels.ts");
+    const installedPackage = path.join(root, "node_modules/@fixture/labels");
+    const { runnerImport } = await vi.importActual<typeof import("vite")>("vite");
+    try {
+      await writeFile(
+        entry,
+        'import { label } from "@fixture/labels";\n' +
+          "export const loadControlUiSourceCatalog = () => " +
+          "({ common: { health: label }, configHints: { fixture: { label } } });\n",
+      );
+      await mkdir(installedPackage, { recursive: true });
+      await writeFile(
+        path.join(installedPackage, "package.json"),
+        JSON.stringify({ name: "@fixture/labels", type: "module", exports: "./index.js" }),
+      );
+      await writeFile(path.join(installedPackage, "index.js"), 'export const label = "stale";\n');
+      await writeFile(dependency, 'export const label = "first";\n');
+      await fsMocks.existsSync.withImplementation(
+        () => false,
+        async () => {
+          await viteMocks.runnerImport.withImplementation(
+            (_entry, config) => runnerImport(entry, config),
+            async () => {
+              const { load, watchChange } = controlUiLocaleModuleHooks([
+                { find: "@fixture/labels", replacement: dependency },
+              ]);
+              const addWatchFile = vi.fn();
+              const readCatalog = async () => {
+                const base = await loadControlUiLocaleModuleSource(
+                  load,
+                  "\0virtual:openclaw-control-ui-locale/fr",
+                  addWatchFile,
+                );
+                const hints = await loadControlUiLocaleModuleSource(
+                  load,
+                  "\0virtual:openclaw-control-ui-locale-config-hints/fr",
+                  addWatchFile,
+                );
+                return executeControlUiLocaleModule("fr", base, hints);
+              };
+              expect(await readCatalog()).toEqual({
+                common: { health: "first" },
+                configHints: { fixture: { label: "first" } },
+              });
+              expect(addWatchFile.mock.calls.map(([file]) => path.normalize(file))).toContain(
+                dependency,
+              );
+              await writeFile(dependency, 'export const label = "second";\n');
+              await watchChange.call({} as never, dependency, {} as never);
+              expect(await readCatalog()).toEqual({
+                common: { health: "second" },
+                configHints: { fixture: { label: "second" } },
+              });
+            },
+          );
+        },
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("invalidates a resolved locale generation at build start", async () => {
@@ -873,19 +911,16 @@ describe("Control UI Vite config", () => {
       { common: { health: "first" }, configHints: { first: { label: "first" } } },
       { common: { health: "second" }, configHints: { second: { label: "second" } } },
     ];
-    let registrations = 0;
+    let imports = 0;
 
     await fsMocks.existsSync.withImplementation(
       () => false,
       async () => {
-        await tsxMocks.register.withImplementation(
-          () =>
-            ({
-              import: vi.fn(async () => ({
-                loadControlUiSourceCatalog: () => catalogs[registrations++],
-              })),
-              unregister: vi.fn(async () => undefined),
-            }) as never,
+        await viteMocks.runnerImport.withImplementation(
+          async () => ({
+            module: { loadControlUiSourceCatalog: () => catalogs[imports++] },
+            dependencies: [],
+          }),
           async () => {
             const { buildStart, load } = controlUiLocaleModuleHooks();
             const firstBase = await loadControlUiLocaleModuleSource(

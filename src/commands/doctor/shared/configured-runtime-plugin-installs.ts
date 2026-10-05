@@ -1,4 +1,3 @@
-// Doctor helpers for installing plugins required by configured agent runtimes.
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   collectConfiguredAgentHarnessRuntimes,
@@ -63,7 +62,7 @@ export function resolveConfiguredRuntimePluginInstallCandidate(
   );
 }
 
-function acpxRuntimeIsConfigured(cfg: OpenClawConfig): boolean {
+export function acpxRuntimeIsConfigured(cfg: OpenClawConfig): boolean {
   const acp = asOptionalRecord(cfg.acp);
   const backend = typeof acp?.backend === "string" ? acp.backend.trim().toLowerCase() : "";
   return (
@@ -74,8 +73,8 @@ function acpxRuntimeIsConfigured(cfg: OpenClawConfig): boolean {
   );
 }
 
-/** Collect runtime plugin ids implied by configured harness runtimes and ACPX settings. */
-export function collectConfiguredRuntimePluginIds(
+/** Collect runtime ids without loading plugin metadata during startup planning. */
+export function collectConfiguredRuntimeIds(
   cfg: OpenClawConfig,
   options?: ConfiguredAgentHarnessRuntimeOptions,
 ): string[] {

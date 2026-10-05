@@ -42,7 +42,7 @@ Backend plugin APIs and ordinary plugin loading do not require that setting.
 ## What each page covers
 
 - [Imports and module layout](/plugins/sdk-overview/imports) — which subpath to import from, the subpath catalog, and the internal barrel convention.
-- [Capability registration](/plugins/sdk-overview/capabilities) — provider registrars plus the worker-provider and embedding runtime contracts.
+- [Capability registration](/plugins/sdk-overview/capabilities) — provider registrars plus storage, worker, and embedding runtime contracts.
 - [Tools and commands](/plugins/sdk-overview/tools-and-commands) — agent tools, custom commands, node-host commands, and widget presenters.
 - [Infrastructure registration](/plugins/sdk-overview/infrastructure) — hooks, HTTP routes, Gateway methods, services, and the webhook and SQLite helpers.
 - [Host hooks](/plugins/sdk-overview/host-hooks) — session extensions, trusted tool policies, Control UI descriptors, and runtime lifecycle.
@@ -85,6 +85,7 @@ and external URLs. Registering another provider replaces the current provider.
 | `api.version`            | `string?`                 | Plugin version (optional)                                                                 |
 | `api.description`        | `string?`                 | Plugin description (optional)                                                             |
 | `api.source`             | `string`                  | Plugin source path                                                                        |
+| `api.runtimeSource`      | `string?`                 | Selected runtime entrypoint path, when the loader has selected a runtime artifact         |
 | `api.rootDir`            | `string?`                 | Plugin root directory (optional)                                                          |
 | `api.config`             | `OpenClawConfig`          | Current config snapshot (active in-memory runtime snapshot when available)                |
 | `api.pluginConfig`       | `Record<string, unknown>` | Plugin-specific config from `plugins.entries.<id>.config`                                 |
@@ -92,6 +93,14 @@ and external URLs. Registering another provider replaces the current provider.
 | `api.logger`             | `PluginLogger`            | Scoped logger (`debug`, `info`, `warn`, `error`)                                          |
 | `api.registrationMode`   | `PluginRegistrationMode`  | Current load mode; `"setup-runtime"` is the lightweight setup flow with runtime available |
 | `api.resolvePath(input)` | `(string) => string`      | Resolve path relative to plugin root                                                      |
+
+Use `api.runtimeSource` to locate private modules beside the selected runtime
+entrypoint. It records the loader's source, standalone package, or bundled
+artifact choice and always identifies the main runtime entry, even during
+setup registration. `api.source` and `api.rootDir` retain discovery identity;
+they can differ from the selected artifact. `runtimeSource` is absent when no
+runtime artifact has been selected, including metadata-only APIs. This path is
+a location fact, not authorization to invoke a retired plugin.
 
 ## Where each section moved
 
@@ -119,6 +128,10 @@ resolve here.
 - <a id="events-and-lifecycle" />[Events and lifecycle](/plugins/sdk-overview/events-and-hooks#events-and-lifecycle)
 - <a id="hook-decision-semantics" />[Hook decision semantics](/plugins/sdk-overview/events-and-hooks#hook-decision-semantics)
 - <a id="internal-module-convention" />[Internal module convention](/plugins/sdk-overview/imports#internal-module-convention)
+
+## Docked link readers
+
+See [docked link readers](/plugins/sdk-overview/host-hooks#docked-link-readers) for passive documents beside chat.
 
 ## Related
 

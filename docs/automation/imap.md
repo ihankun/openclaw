@@ -22,7 +22,7 @@ Configure an explicit reader agent before enabling the plugin. Preserve existing
       main: {},
       mail_reader: {
         workspace: "~/.openclaw/workspace-mail-reader",
-        model: "openai/gpt-5.6-sol",
+        model: "openai/gpt-6-astra",
         sandbox: {
           mode: "all",
           scope: "session",
@@ -103,6 +103,13 @@ the minimum does not bypass the sender allowlist or freshness checks.
 The default minimum is `verified`. An explicit `min: "unverified"` admits
 no-evidence mail and DMARC `temperror` results. Authenticator exceptions cause
 retries unless an explicitly trusted header satisfies the floor.
+
+The trusted-authserv override applies to ordinary authentication results as well as
+authenticator errors: at an `asserted` floor, a matching header can admit mail even
+when local DMARC verification returns `none` or `fail`. The receiving boundary MTA
+must strip or overwrite untrusted inbound `Authentication-Results` values that claim
+a configured authserv id. OpenClaw cannot establish header-hop provenance from the
+message alone.
 
 ### Sender-bound tokens and freshness
 

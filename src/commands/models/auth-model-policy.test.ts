@@ -1,16 +1,8 @@
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWizardPrompter } from "../../../test/helpers/wizard-prompter.js";
-import {
-  registerRuntimeConfigWriteListener,
-  setRuntimeConfigSnapshotRefreshHandler,
-} from "../../config/runtime-snapshot.js";
-import {
-  getRuntimeConfigWriteApplication,
-  type RuntimeConfigWriteApplicationClaim,
-} from "../../config/runtime-write-application.js";
+import { setRuntimeConfigSnapshotRefreshHandler } from "../../config/runtime-snapshot.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { createDeferredCore } from "../../shared/deferred.js";
 import { createOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { completeProviderModelAccess, prepareProviderModelAccess } from "./auth-model-policy.js";
 import { updateConfig } from "./shared.js";
@@ -62,8 +54,8 @@ describe("provider model access consent", () => {
     }
     await state.writeConfig(config);
     const outcome = await completeProviderModelAccess({ prepared: prepare(), prompter, runtime });
-    expect(outcome).toContain("Application by the running Gateway is not confirmed");
-    expect(outcome).toContain("openclaw gateway restart");
+    expect(outcome.message).toContain("Application by the running Gateway is not confirmed");
+    expect(outcome.message).toContain("openclaw gateway restart");
     expect(runtime.log).not.toHaveBeenCalledWith(expect.stringContaining("models are now visible"));
     const saved = await readSaved();
     expect(saved.agents?.defaults?.model).toBe("other/current");
@@ -137,77 +129,39 @@ describe("provider model access consent", () => {
     }
   });
 
-  it.each(["replacement", "removed-owner", "late-change"])(
-    "rejects consent after %s",
-    async (change) => {
-      config.agents!.entries!.main!.modelPolicy = { allow: ["other/private"] };
+  it.each(["removed-owner", "late-change"])("rejects consent after %s", async (change) => {
+    config.agents!.entries!.main!.modelPolicy = { allow: ["other/private"] };
+    await state.writeConfig(config);
+    const prepared = prepare();
+    const replace = async () => {
+      if (change === "removed-owner") {
+        delete config.agents!.entries!.main!.modelPolicy;
+      } else {
+        config.agents!.entries!.main!.modelPolicy = { allow: ["other/replacement"] };
+      }
       await state.writeConfig(config);
-      const prepared = prepare();
-      const replace = async () => {
-        if (change === "removed-owner") {
-          delete config.agents!.entries!.main!.modelPolicy;
-        } else {
-          config.agents!.entries!.main!.modelPolicy = { allow: ["other/replacement"] };
-        }
-        await state.writeConfig(config);
-      };
-      if (change !== "late-change") {
-        await replace();
-      }
-      await expect(
-        completeProviderModelAccess({
-          prepared,
-          runtime,
-          prompter: createWizardPrompter({
-            select: async ({ options }) => {
-              if (change === "late-change") {
-                await replace();
-              }
-              return options[0]!.value;
-            },
-          }),
+    };
+    if (change !== "late-change") {
+      await replace();
+    }
+    await expect(
+      completeProviderModelAccess({
+        prepared,
+        runtime,
+        prompter: createWizardPrompter({
+          select: async ({ options }) => {
+            if (change === "late-change") {
+              await replace();
+            }
+            return options[0]!.value;
+          },
         }),
-      ).rejects.toThrow("Model restrictions changed during sign-in");
-      const saved = await readSaved();
-      expect(saved.agents?.defaults?.modelPolicy?.allow).toEqual(["other/current"]);
-      expect(saved.agents?.entries?.main?.modelPolicy?.allow).toEqual(
-        change === "removed-owner" ? undefined : ["other/replacement"],
-      );
-    },
-  );
-
-  it.each(["applied", "failed"] as const)(
-    "waits for exact runtime application: %s",
-    async (status) => {
-      const claimReady = createDeferredCore<RuntimeConfigWriteApplicationClaim>();
-      const stop = registerRuntimeConfigWriteListener((event) => {
-        const claim = getRuntimeConfigWriteApplication(event)?.claim();
-        if (claim) {
-          claimReady.resolve(claim);
-        }
-      });
-      let complete = false;
-      const result = completeProviderModelAccess({ prepared: prepare(), prompter, runtime });
-      void result.then(
-        () => {
-          complete = true;
-        },
-        () => {
-          complete = true;
-        },
-      );
-      try {
-        const claim = await claimReady.promise;
-        expect(complete).toBe(false);
-        claim.settle(status);
-        if (status === "applied") {
-          await expect(result).resolves.toBe("All Sample models are now visible.");
-        } else {
-          await expect(result).rejects.toThrow("did not apply");
-        }
-      } finally {
-        stop();
-      }
-    },
-  );
+      }),
+    ).rejects.toThrow("Model restrictions changed during sign-in");
+    const saved = await readSaved();
+    expect(saved.agents?.defaults?.modelPolicy?.allow).toEqual(["other/current"]);
+    expect(saved.agents?.entries?.main?.modelPolicy?.allow).toEqual(
+      change === "removed-owner" ? undefined : ["other/replacement"],
+    );
+  });
 });

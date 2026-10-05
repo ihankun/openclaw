@@ -1,6 +1,10 @@
+import type {
+  SessionContext as CoreSessionContext,
+  SessionTreeEntry,
+} from "../../../packages/agent-core/src/harness/types.js";
+import type { AgentMessage } from "../../../packages/agent-core/src/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { ImageContent, TextContent } from "../../llm/types.js";
-import type { AgentMessage } from "../runtime/index.js";
 
 export interface SessionHeader {
   type: "session";
@@ -47,6 +51,8 @@ export interface CompactionEntry<T = unknown> extends SessionEntryBase {
   summary: string;
   firstKeptEntryId: string;
   tokensBefore: number;
+  /** Context estimate after compaction, retained with its ordinary transcript marker. */
+  tokensAfter?: number;
   /** Extension-specific data, such as artifact indexes or version markers. */
   details?: T;
   /** True for extension-generated compaction entries. */
@@ -114,6 +120,8 @@ export type FileEntry = SessionHeader | SessionEntry;
 
 export type AppendPersistenceOptions = {
   appendIntent?: "active-branch";
+  /** Synchronous fresh SQLite message assertion; never serialized into an entry. */
+  beforeFreshMessageCommit?: () => void;
   config?: OpenClawConfig;
   idempotencyLookup?: "scan" | "scan-assistant" | "caller-checked";
   invalidateSerializedPrefixCache?: boolean;
@@ -126,23 +134,11 @@ export interface SessionTreeNode {
   labelTimestamp?: string;
 }
 
-export interface SessionContext {
-  messages: AgentMessage[];
-  thinkingLevel: string;
-  model: { provider: string; modelId: string } | null;
-}
+export interface SessionContext extends CoreSessionContext {}
 
 export type PreservedOpaqueFileEntry = {
   index: number;
   record: unknown;
 };
 
-export type SessionLeafControl = {
-  type: "leaf";
-  id: string;
-  parentId: string | null;
-  timestamp: string;
-  targetId: string | null;
-  appendParentId?: string | null;
-  appendMode?: "side";
-};
+export type SessionLeafControl = Extract<SessionTreeEntry, { type: "leaf" }>;
