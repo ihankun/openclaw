@@ -8,7 +8,7 @@
  * Usage: node scripts/stage-gateway.mjs
  */
 
-import { cpSync, existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, statSync, readdirSync, realpathSync } from "node:fs";
+import { cpSync, existsSync, globSync, mkdirSync, rmSync, readFileSync, writeFileSync, statSync, readdirSync, realpathSync } from "node:fs";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,24 @@ const REQUIRED = (rootPkg.files ?? [])
 const SKIP_FROM_FILES = new Set(["package.json"]);
 for (const item of REQUIRED) {
   if (SKIP_FROM_FILES.has(item)) continue;
+  if (item.includes("*")) {
+    // Glob entries (for example `dist/worker-artifacts/*.tar.gz`) are produced by
+    // the npm prepack pipeline, not by `pnpm build`. Stage whatever exists and keep
+    // going when the current build has nothing to copy.
+    const matches = globSync(item, { cwd: PROJECT_ROOT });
+    if (matches.length === 0) {
+      console.warn(`  ⚠ ${item} — nothing to stage (npm prepack artifact, absent from pnpm build)`);
+      continue;
+    }
+    for (const match of matches) {
+      cpSync(path.join(PROJECT_ROOT, match), path.join(STAGING_DIR, match), {
+        recursive: true,
+        force: true,
+      });
+    }
+    console.log(`  ✓ ${item} (${matches.length} ${matches.length === 1 ? "file" : "files"})`);
+    continue;
+  }
   const src = path.join(PROJECT_ROOT, item);
   const dst = path.join(STAGING_DIR, item);
   if (!existsSync(src)) {
